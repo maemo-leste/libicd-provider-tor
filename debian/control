@@ -1,0 +1,18 @@
+Source: libicd-provider-tor
+Priority: optional
+Maintainer: Merlijn Wajer <merlijn@wizzup.org>
+Build-Depends: debhelper (>> 10), autotools-dev,
+ libglib2.0-dev, libgconf2-dev,
+ icd2-dev, icd2-osso-ic-dev,
+Section: net
+Standards-Version: 4.3.0
+
+Package: libicd-provider-tor
+Section: net
+Architecture: any
+Multi-Arch: same
+Depends: icd2,
+ tor,
+ ${shlibs:Depends}
+Description: ICd2 tor service provider configuration module
+ ICd2 tor service provider configuration module

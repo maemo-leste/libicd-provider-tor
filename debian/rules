@@ -1,0 +1,21 @@
+#!/usr/bin/make -f
+export DH_VERBOSE=1
+
+# showel logs to stderr if we're debugging
+ifneq (,$(findstring debug,$(DEB_BUILD_OPTIONS)))
+	confflags += --enable-log-stderr
+endif
+
+DEB_CONFIGURE_EXTRA_FLAGS = --prefix=/usr --sysconfdir=/etc --disable-static $(confflags)
+
+# default flags
+CFLAGS += -g -O2
+
+override_dh_auto_install:
+	dh_auto_install --destdir=debian/tmp
+
+override_dh_auto_configure:
+	dh_auto_configure -- $(DEB_CONFIGURE_EXTRA_FLAGS)
+
+%:
+	dh $@ --with autoreconf

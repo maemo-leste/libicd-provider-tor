@@ -1,0 +1,50 @@
+<?xml version="1.0"?>
+<gconfschemafile>
+	<schemalist>
+		<schema>
+			<key>/schemas/system/osso/connectivity/srv_provider/TOR/module</key>
+			<applyto>/system/osso/connectivity/srv_provider/TOR/module</applyto>
+			<owner>libicd_provider_tor</owner>
+			<type>string</type>
+			<default>libicd_provider_tor.so</default>
+			<locale name="C">
+				<short>Dummy provider module</short>
+				<long>Dummy service provider module for ICd2 testing</long>
+			</locale>
+		</schema>
+        <schema>
+            <key>/schemas/system/osso/connectivity/srv_provider/TOR/network_type</key>
+            <applyto>/system/osso/connectivity/srv_provider/TOR/network_type</applyto>
+            <owner>libicd_provider_tor</owner>
+            <type>list</type>
+            <list_type>string</list_type>
+            <default>[DUMMY,GPRS,WLAN_INFRA]</default>
+            <locale name="C">
+                <short>Supported network types</short>
+                <long>List of the network types supported by this provider</long>
+            </locale>
+        </schema>
+        <schema>
+            <key>/schemas/system/osso/connectivity/srv_provider/TOR/custom_ui/tor-provider/type_icon_name</key>
+            <applyto>/system/osso/connectivity/srv_provider/TOR/custom_ui/tor-provider/type_icon_name</applyto>
+            <owner>libicd_provider_tor</owner>
+            <type>string</type>
+            <default>statusarea_tor_enabled</default>
+            <locale name="C">
+                <short>Icon name for Tor provider</short>
+                <long>Icon name for the Tor provider ICD2 plugin</long>
+            </locale>
+        </schema>
+        <schema>
+            <key>/schemas/system/osso/connectivity/srv_provider/TOR/custom_ui/tor-provider/markup</key>
+            <applyto>/system/osso/connectivity/srv_provider/TOR/custom_ui/tor-provider/markup</applyto>
+            <owner>libicd_provider_tor</owner>
+            <type>string</type>
+            <default>%s &lt;b&gt;(Tor)&lt;/b&gt;</default>
+            <locale name="C">
+                <short>Markup for the Tor provider</short>
+                <long>Markup string for the Tor provider ICD2 plugin</long>
+            </locale>
+        </schema>
+	</schemalist>
+</gconfschemafile>
