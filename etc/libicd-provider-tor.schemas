@@ -36,6 +36,28 @@
             </locale>
         </schema>
         <schema>
+            <key>/schemas/system/osso/connectivity/srv_provider/TOR/custom_ui/tor-provider/type_statusbar_icon_name</key>
+            <applyto>/system/osso/connectivity/srv_provider/TOR/custom_ui/tor-provider/type_statusbar_icon_name</applyto>
+            <owner>libicd_provider_tor</owner>
+            <type>string</type>
+            <default>statusarea_tor_connected</default>
+            <locale name="C">
+                <short>Connected statusbar icon name for Tor provider</short>
+                <long>Connected statusbar icon name for the Tor provider ICD2 plugin</long>
+            </locale>
+        </schema>
+        <schema>
+            <key>/schemas/system/osso/connectivity/srv_provider/TOR/custom_ui/tor-provider/type_statusbar_dimmed_icon_name</key>
+            <applyto>/system/osso/connectivity/srv_provider/TOR/custom_ui/tor-provider/type_statusbar_dimmed_icon_name</applyto>
+            <owner>libicd_provider_tor</owner>
+            <type>string</type>
+            <default>statusarea_tor_connecting</default>
+            <locale name="C">
+                <short>Connecting statusbar icon name for Tor provider</short>
+                <long>Connecting statusbar icon name for the Tor provider ICD2 plugin</long>
+            </locale>
+        </schema>
+        <schema>
             <key>/schemas/system/osso/connectivity/srv_provider/TOR/custom_ui/tor-provider/markup</key>
             <applyto>/system/osso/connectivity/srv_provider/TOR/custom_ui/tor-provider/markup</applyto>
             <owner>libicd_provider_tor</owner>
