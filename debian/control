@@ -13,6 +13,7 @@ Architecture: any
 Multi-Arch: same
 Depends: icd2,
  tor,
+ python3-stem,
  ${shlibs:Depends}
 Description: ICd2 tor service provider configuration module
  ICd2 tor service provider configuration module
