@@ -8,8 +8,8 @@
 			<type>string</type>
 			<default>libicd_provider_tor.so</default>
 			<locale name="C">
-				<short>Dummy provider module</short>
-				<long>Dummy service provider module for ICd2 testing</long>
+				<short>Tor provider module</short>
+				<long>Tor service provider module for ICd2 testing</long>
 			</locale>
 		</schema>
         <schema>
@@ -25,8 +25,8 @@
             </locale>
         </schema>
         <schema>
-            <key>/schemas/system/osso/connectivity/srv_provider/TOR/custom_ui/tor-provider/type_icon_name</key>
-            <applyto>/system/osso/connectivity/srv_provider/TOR/custom_ui/tor-provider/type_icon_name</applyto>
+            <key>/schemas/system/osso/connectivity/srv_provider/TOR/default_custom_ui/type_icon_name</key>
+            <applyto>/system/osso/connectivity/srv_provider/TOR/default_custom_ui/type_icon_name</applyto>
             <owner>libicd_provider_tor</owner>
             <type>string</type>
             <default>statusarea_tor_enabled</default>
@@ -36,8 +36,8 @@
             </locale>
         </schema>
         <schema>
-            <key>/schemas/system/osso/connectivity/srv_provider/TOR/custom_ui/tor-provider/type_statusbar_icon_name</key>
-            <applyto>/system/osso/connectivity/srv_provider/TOR/custom_ui/tor-provider/type_statusbar_icon_name</applyto>
+            <key>/schemas/system/osso/connectivity/srv_provider/TOR/default_custom_ui/type_statusbar_icon_name</key>
+            <applyto>/system/osso/connectivity/srv_provider/TOR/default_custom_ui/type_statusbar_icon_name</applyto>
             <owner>libicd_provider_tor</owner>
             <type>string</type>
             <default>statusarea_tor_connected</default>
@@ -47,8 +47,8 @@
             </locale>
         </schema>
         <schema>
-            <key>/schemas/system/osso/connectivity/srv_provider/TOR/custom_ui/tor-provider/type_statusbar_dimmed_icon_name</key>
-            <applyto>/system/osso/connectivity/srv_provider/TOR/custom_ui/tor-provider/type_statusbar_dimmed_icon_name</applyto>
+            <key>/schemas/system/osso/connectivity/srv_provider/TOR/default_custom_ui/type_statusbar_dimmed_icon_name</key>
+            <applyto>/system/osso/connectivity/srv_provider/TOR/default_custom_ui/type_statusbar_dimmed_icon_name</applyto>
             <owner>libicd_provider_tor</owner>
             <type>string</type>
             <default>statusarea_tor_connecting</default>
@@ -58,8 +58,8 @@
             </locale>
         </schema>
         <schema>
-            <key>/schemas/system/osso/connectivity/srv_provider/TOR/custom_ui/tor-provider/markup</key>
-            <applyto>/system/osso/connectivity/srv_provider/TOR/custom_ui/tor-provider/markup</applyto>
+            <key>/schemas/system/osso/connectivity/srv_provider/TOR/default_custom_ui/markup</key>
+            <applyto>/system/osso/connectivity/srv_provider/TOR/default_custom_ui/markup</applyto>
             <owner>libicd_provider_tor</owner>
             <type>string</type>
             <default>%s &lt;b&gt;(Tor)&lt;/b&gt;</default>
