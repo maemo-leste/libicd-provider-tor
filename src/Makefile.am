@@ -15,4 +15,6 @@ plugin_LTLIBRARIES = \
 	libicd_provider_tor.la
 
 libicd_provider_tor_la_SOURCES = \
-	libicd_provider_tor.c
+	libicd_provider_tor.c \
+	libicd_tor_config.c
+	libicd_tor.h

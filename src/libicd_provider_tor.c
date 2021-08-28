@@ -33,11 +33,7 @@
 #include <support/icd_log.h>
 #include <srv_provider_api.h>
 
-#define TOR_NETWORK_TYPE "TOR"
-#define TOR_PROVIDER_TYPE "TOR"
-#define TOR_PROVIDER_NAME "Tor Provider"
-#define TOR_PROVIDER_ID "tor-provider"
-
+#include "libicd_tor.h"
 
 struct _provider_tor_private {
     /* For pid monitoring */
@@ -48,10 +44,6 @@ struct _provider_tor_private {
     icd_srv_limited_conn_fn limited_conn_fn;
 
     GSList *network_data_list;
-
-    /* Maybe: */
-    /* pw_uid and pw_gid for debian-tor */
-
 };
 typedef struct _provider_tor_private provider_tor_private;
 
@@ -230,7 +222,26 @@ static void tor_connect(const gchar * service_type,
     network_data->connect_cb_token = connect_cb_token;
     network_data->private = priv;
 
-    pid_t pid = spawn_as("debian-tor", "/usr/bin/tor", "/usr/bin/tor", NULL);
+    char config_filename[256];
+    if (snprintf(config_filename, 256, "/etc/tor/torrc-provider-%s", service_id) >= 256) {
+        ILOG_WARN("Unable to allocate torrc config filename\n");
+        network_stop_all(network_data);
+        network_free_all(network_data);
+        return;
+    }
+
+    char* config_content = generate_config(service_id);
+    GError *error = NULL;
+    g_file_set_contents(config_filename, config_content, strlen(config_content), &error);
+    if (error != NULL) {
+        g_clear_error(&error);
+        ILOG_WARN("Unable to write Tor config file\n");
+        network_stop_all(network_data);
+        network_free_all(network_data);
+        return;
+    }
+
+    pid_t pid = spawn_as("debian-tor", "/usr/bin/tor", "/usr/bin/tor", "-f", config_filename, NULL);
     if (pid == 0) {
         ILOG_WARN("Failed to start Tor\n");
         connect_cb(ICD_SRV_ERROR, NULL, connect_cb_token);
@@ -330,60 +341,70 @@ static void tor_identify(enum icd_scan_status status,
 	     network_type, network_name, network_id);
 
 	GConfClient *gconf_client;
-	GConfValue *value;
-	GError *error = NULL;
 	gchar *iap_gconf_key;
-	const char *gconf_service_type = NULL;
+	char *gconf_service_type = NULL;
+	char *gconf_service_id = NULL;
+    GSList *providers = NULL, *l = NULL;
+    gboolean service_id_known = FALSE;
 
 	gconf_client = gconf_client_get_default();
 
-	// TODO: we don't read service_id yet
-	// TODO: check this code for memleaks
-	iap_gconf_key =
-	    g_strdup_printf("/system/osso/connectivity/IAP/%s/service_type",
-			    network_id);
-	value = gconf_client_get(gconf_client, iap_gconf_key, &error);
+	iap_gconf_key = g_strdup_printf("/system/osso/connectivity/IAP/%s/service_type", network_id);
+	gconf_service_type = gconf_client_get_string(gconf_client, iap_gconf_key, NULL);
 	g_free(iap_gconf_key);
 
-	if (error) {
-		g_clear_error(&error);
-	} else {
-		gconf_service_type = gconf_value_get_string(value);
-	}
+	iap_gconf_key = g_strdup_printf("/system/osso/connectivity/IAP/%s/service_id", network_id);
+	gconf_service_id = gconf_client_get_string(gconf_client, iap_gconf_key, NULL);
+	g_free(iap_gconf_key);
 
+    providers = gconf_client_get_list(gconf_client, GC_ICD_TOR_AVAILABLE_IDS, GCONF_VALUE_STRING, NULL);
+    for (l = providers; l; l = l->next) {
+        if (!strcmp(l->data, gconf_service_id)) {
+            service_id_known = TRUE;
+            break;
+        }
+    }
+    g_slist_free_full(providers, g_free);
 	g_object_unref(gconf_client);
 
 	/* We construct a name here to make it apparent this is a tor provider */
-	gchar *name =
-	    g_strconcat(network_name, " (", TOR_PROVIDER_NAME, ") ", NULL);
+	gchar *name = g_strconcat(network_name, " (", TOR_PROVIDER_NAME, ") ", NULL);
 	ILOG_DEBUG("tor_identify: called for: %s\n", name);
 
-	if (g_strcmp0(TOR_PROVIDER_NAME, gconf_service_type) == 0) {
+	if (service_id_known && g_strcmp0(TOR_PROVIDER_TYPE, gconf_service_type) == 0) {
 		ILOG_DEBUG("tor_identify: MATCH\n");
 		identify_cb(ICD_SRV_IDENTIFIED,
                 TOR_PROVIDER_TYPE,	/* service type */
 			    name,
-                0,	/* XXX: service attributes */
-			    TOR_PROVIDER_ID, /* TODO: replace this with what is in gconf */
-                0,	/* XXX: service priority */
+                TOR_DEFAULT_SERVICE_ATTRIBUTES,
+			    gconf_service_id,
+                TOR_DEFAULT_SERVICE_PRIORITY,
 			    network_type,
 			    network_attrs, network_id, identify_cb_token);
 
 	} else {
 		ILOG_DEBUG("tor_identify: NO MATCH\n");
-        /* TODO: Do we really need to add provider type and provider id when we
+        /* XXX: Do we really need to add provider type and provider id when we
          * don't match it? */
 		identify_cb(ICD_SRV_UNKNOWN,
                 TOR_PROVIDER_TYPE,	/* service type */
 			    name,
-                0,	/* XXX: service attributes */
-			    TOR_PROVIDER_ID, /* TODO: replace this with what is in gconf */
-                0,	/* XXX: service priority */
+                TOR_DEFAULT_SERVICE_ATTRIBUTES,
+			    gconf_service_id,
+                TOR_DEFAULT_SERVICE_PRIORITY,
 			    network_type,
 			    network_attrs, network_id, identify_cb_token);
 	}
 
-	free(name);
+    if (gconf_service_type) {
+        g_free(gconf_service_type);
+    }
+
+    if (gconf_service_id) {
+        g_free(gconf_service_id);
+    }
+
+	g_free(name);
 	return;
 }
 
