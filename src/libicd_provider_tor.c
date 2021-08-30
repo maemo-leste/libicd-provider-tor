@@ -378,7 +378,7 @@ static void tor_identify(enum icd_scan_status status,
 
     providers = gconf_client_get_list(gconf_client, GC_ICD_TOR_AVAILABLE_IDS, GCONF_VALUE_STRING, NULL);
     for (l = providers; l; l = l->next) {
-        if (!strcmp(l->data, gconf_service_id)) {
+        if (gconf_service_id && !strcmp(l->data, gconf_service_id)) {
             service_id_known = TRUE;
             break;
         }
