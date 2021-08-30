@@ -73,7 +73,7 @@ char* generate_config(const char* config_name) {
 	g_object_unref(gconf);
 
 	torrc = g_strdup_printf(
-		"User debian-tor\n"
+        /* "User debian-tor\n" */
 		"SocksPort %d\n"
 		"ControlPort %d\n"
 		"VirtualAddrNetworkIPv4 10.192.0.0/10\n"
