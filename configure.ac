@@ -68,4 +68,5 @@ AC_OUTPUT([
 	Makefile
 	src/Makefile
 	etc/Makefile
+	scripts/Makefile
 	])

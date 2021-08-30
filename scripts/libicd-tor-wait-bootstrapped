@@ -1,0 +1,64 @@
+#!/usr/bin/env python3
+import sys
+import time
+import stem
+import stem.control
+
+import sys
+
+port = int(sys.argv[1])
+
+
+TIMEOUT = 60
+
+# Different exit codes mean different things:
+#
+# - 0 = Tor is ready for usage
+# - 1 = Timeout hit waiting for bootstrapping
+# - ... = ?
+# - 255 = cannot connect to Tor (password fail, etc)
+
+
+start_time = time.time()
+
+controller_ok = False
+controller = None
+
+while True:
+    if time.time() > start_time + TIMEOUT:
+        print('Timeout', file=sys.stderr)
+        sys.exit(1)
+        break
+
+    try:
+        if not controller_ok:
+            controller = stem.control.Controller.from_port(port=port)
+
+            try:
+                controller.authenticate()
+            except stem.connection.AuthenticationFailure as e:
+                print('Failed to authenticate:', e, file=sys.stderr)
+                controller.close()
+                sys.exit(255)
+
+        controller_ok = True
+
+        response = controller.get_info("status/bootstrap-phase")
+
+        if(response.find('SUMMARY="Done"') > 0):
+            controller.close()
+            sys.exit(0)
+        else:
+            pass
+
+    except stem.ControllerError as e:
+        controller_ok = False
+        controller.close()
+        continue
+
+    time.sleep(0.25)
+
+if controller_ok:
+    controller.close()
+
+sys.exit(1)

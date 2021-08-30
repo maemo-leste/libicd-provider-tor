@@ -1,5 +1,5 @@
 
-SUBDIRS = src etc
+SUBDIRS = src etc scripts
 
 EXTRA_DIST = \
 	autogen.sh \

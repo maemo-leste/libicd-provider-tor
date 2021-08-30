@@ -119,9 +119,9 @@ icd_tor_find_network_data(const gchar *network_type, guint network_attrs,
   return NULL;
 }
 
-/* pathname and arg are like in execl, returns pid, 0 is error */
+/* pathname and arg are like in execv, returns pid, 0 is error */
 static pid_t spawn_as(const char* username,
-                    const char* pathname, const char *arg, ...) {
+                    const char* pathname, char* args[]) {
     struct passwd * ent = getpwnam(username);
     if (ent == NULL) {
         ILOG_CRIT("spawn_tor: getpwnam failed\n");
@@ -141,8 +141,9 @@ static pid_t spawn_as(const char* username,
             ILOG_CRIT("setuid failed\n");
             exit(1);
         }
-        execl(pathname, arg, NULL);
-        ILOG_CRIT("execl failed\n");
+        execv(pathname, args);
+
+        ILOG_CRIT("execv failed\n");
         exit(1);
     } else {
         ILOG_DEBUG("spawn_as got pid: %d\n", pid);
@@ -155,8 +156,10 @@ static pid_t spawn_as(const char* username,
 
 static void network_free_all(tor_network_data* network_data) {
     provider_tor_private* priv = network_data->private;
-    priv->network_data_list = g_slist_remove(priv->network_data_list,
-                                             network_data);
+    if (priv->network_data_list) {
+        priv->network_data_list = g_slist_remove(priv->network_data_list,
+                                                 network_data);
+    }
 
     g_free(network_data->service_type);
     g_free(network_data->service_id);
@@ -222,9 +225,13 @@ static void tor_connect(const gchar * service_type,
     network_data->connect_cb_token = connect_cb_token;
     network_data->private = priv;
 
+    /* Add it once we have both pids */
+    priv->network_data_list = g_slist_prepend(priv->network_data_list, network_data);
+
     char config_filename[256];
     if (snprintf(config_filename, 256, "/etc/tor/torrc-provider-%s", service_id) >= 256) {
         ILOG_WARN("Unable to allocate torrc config filename\n");
+        connect_cb(ICD_SRV_ERROR, NULL, connect_cb_token);
         network_stop_all(network_data);
         network_free_all(network_data);
         return;
@@ -236,29 +243,41 @@ static void tor_connect(const gchar * service_type,
     if (error != NULL) {
         g_clear_error(&error);
         ILOG_WARN("Unable to write Tor config file\n");
+        connect_cb(ICD_SRV_ERROR, NULL, connect_cb_token);
         network_stop_all(network_data);
         network_free_all(network_data);
         return;
     }
 
-    pid_t pid = spawn_as("debian-tor", "/usr/bin/tor", "/usr/bin/tor", "-f", config_filename, NULL);
+    //char* argss[] = {"/usr/bin/tor", NULL};
+    char* argss[] = {"/usr/bin/tor", "-f", config_filename, NULL};
+    pid_t pid = spawn_as("debian-tor", "/usr/bin/tor", argss);
     if (pid == 0) {
         ILOG_WARN("Failed to start Tor\n");
         connect_cb(ICD_SRV_ERROR, NULL, connect_cb_token);
         network_stop_all(network_data);
-        network_free_all(network_data);
         return;
     }
 
     network_data->tor_pid = pid;
     network_data->private->watch_cb(pid, network_data->private->watch_cb_token);
 
-    pid = spawn_as("debian-tor", "/home/user/icd/libicd-provider-tor/wait-bootstrapped.py", "/home/user/icd/libicd-provider-tor/wait-bootstrapped.py");
+	gchar *gc_controlport =
+	    g_strjoin("/", GC_TOR, service_id, GC_CONTROLPORT, NULL);
+	GConfClient* gconf = gconf_client_get_default();
+	gint control_port = gconf_client_get_int(gconf, gc_controlport, NULL);
+	g_object_unref(gconf);
+	g_free(gc_controlport);
+    char cport[64];
+    snprintf(cport, 64, "%d", control_port);
+
+    char* argsv[] = {"/usr/bin/libicd-tor-wait-bootstrapped", cport, NULL};
+
+    pid = spawn_as("debian-tor", "/usr/bin/libicd-tor-wait-bootstrapped", argsv);
     if (pid == 0) {
         ILOG_WARN("Failed to start wait for bootstrapping script\n");
         connect_cb(ICD_SRV_ERROR, NULL, connect_cb_token);
         network_stop_all(network_data);
-        network_free_all(network_data);
         return;
     }
     network_data->wait_for_tor_pid = pid;
@@ -465,6 +484,7 @@ static void tor_child_exit(const pid_t pid,
         ILOG_DEBUG("tor_child_exit for pid: %d\n", pid);
         ILOG_INFO("Tor process stopped");
 
+        /* This will call tor_disconnect, so we don't free/stop here */
         priv->close_fn(ICD_SRV_ERROR, "Tor process quit (unexpectedly)",
                 network_data->service_type,
                 network_data->service_attrs,
@@ -472,10 +492,6 @@ static void tor_child_exit(const pid_t pid,
                 network_data->network_type,
                 network_data->network_attrs,
                 network_data->network_id);
-
-        network_stop_all(network_data);
-        network_free_all(network_data);
-
     } else if (pid_type == WAIT_FOR_TOR_PID) {
         network_data->wait_for_tor_pid = 0;
         ILOG_INFO("Got wait-for-tor pid: %d with status %d", pid, exit_status);

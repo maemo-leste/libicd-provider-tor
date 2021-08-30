@@ -1,2 +1,3 @@
 etc/gconf/schemas/libicd-provider-tor.schemas
 usr/lib/icd2/libicd_provider_tor.so
+usr/bin/libicd-tor-wait-bootstrapped
