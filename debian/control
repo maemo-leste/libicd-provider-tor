@@ -17,3 +17,14 @@ Depends: icd2,
  ${shlibs:Depends}
 Description: ICd2 tor service provider configuration module
  ICd2 tor service provider configuration module
+
+Package: libicd-network-tor
+Section: net
+Architecture: any
+Multi-Arch: same
+Depends: icd2,
+ tor,
+ python3-stem,
+ ${shlibs:Depends}
+Description: ICd2 tor network configuration module
+ ICd2 tor network configuration module
