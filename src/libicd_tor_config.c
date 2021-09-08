@@ -6,6 +6,32 @@
 
 #include "libicd_tor.h"
 
+gboolean get_system_wide_enabled(void) {
+	GConfClient *gconf;
+    gboolean enabled = FALSE;
+
+	gconf = gconf_client_get_default();
+
+	enabled = gconf_client_get_bool(gconf, GC_TOR_SYSTEM, NULL);
+
+	g_object_unref(gconf);
+
+    return enabled;
+}
+
+char* get_active_config(void) {
+	GConfClient *gconf;
+    char* active_config = NULL;
+
+	gconf = gconf_client_get_default();
+
+	active_config = gconf_client_get_string(gconf, GC_TOR_ACTIVE, NULL);
+
+	g_object_unref(gconf);
+
+    return active_config;
+}
+
 char* generate_config(const char* config_name) {
 	GConfClient *gconf;
 	gchar *torrc;
