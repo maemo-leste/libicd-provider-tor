@@ -2,4 +2,5 @@ EXTRA_DIST = \
 	libicd-provider-tor.schemas
 
 gconfschemadir = $(sysconfdir)/gconf/schemas
-dist_gconfschema_DATA = libicd-provider-tor.schemas
+dist_gconfschema_DATA = libicd-provider-tor.schemas \
+						libicd-network-tor.schemas
