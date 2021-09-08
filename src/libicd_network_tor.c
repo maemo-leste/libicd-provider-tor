@@ -20,18 +20,18 @@
  */
 
 #include <string.h>
-//#include <stdio.h>
 #include <glib.h>
 #include <gconf/gconf-client.h>
 
 #include <osso-ic-gconf.h>
+#include "icd/support/icd_log.h"
 #include <network_api.h>
 
-gboolean icd_nw_init (struct icd_nw_api *network_api,
-		      icd_nw_watch_pid_fn watch_cb,
-		      gpointer watch_cb_token,
-		      icd_nw_close_fn close_cb);
+#include "dbus_tor.h"
 
+gboolean icd_nw_init(struct icd_nw_api *network_api,
+		     icd_nw_watch_pid_fn watch_cb,
+		     gpointer watch_cb_token, icd_nw_close_fn close_cb);
 
 /** Function for configuring an IP address.
  * @param network_type network type
@@ -43,27 +43,23 @@ gboolean icd_nw_init (struct icd_nw_api *network_api,
  * @param link_up_cb_token token to pass to the callback function
  * @param private a reference to the icd_nw_api private memeber
  */
-static void tor_ip_up(const gchar *network_type,
-			 const guint network_attrs,
-			 const gchar *network_id,
-			 const gchar *interface_name,
-			 icd_nw_ip_up_cb_fn ip_up_cb,
-			 gpointer ip_up_cb_token,
-			 gpointer *private)
+static void tor_ip_up(const gchar * network_type,
+		      const guint network_attrs,
+		      const gchar * network_id,
+		      const gchar * interface_name,
+		      icd_nw_ip_up_cb_fn ip_up_cb,
+		      gpointer ip_up_cb_token, gpointer * private)
 {
-  //fprintf(stderr, "TOR LINK UP\n");
+	ILOG_DEBUG("TOR LINK UP");
 
-  /* TODO: can we just pass NULL instead of env_set ? */
-  const gchar *env_set[] = {
-    NULL
-  };
+	/* TODO: can we just pass NULL instead of env_set ? */
+	const gchar *env_set[] = {
+		NULL
+	};
 
-  // TODO: do we want ICD_NW_SUCCESS or ICD_NW_SUCCESS_NEXT_LAYER?
-  ip_up_cb (ICD_NW_SUCCESS_NEXT_LAYER,
-	    NULL,
-	    ip_up_cb_token,
-	    env_set,
-	    NULL);
+	// TODO: do we want ICD_NW_SUCCESS or ICD_NW_SUCCESS_NEXT_LAYER?
+	ip_up_cb(ICD_NW_SUCCESS_NEXT_LAYER,
+		 NULL, ip_up_cb_token, env_set, NULL);
 }
 
 /**
@@ -82,13 +78,31 @@ static void tor_ip_up(const gchar *network_type,
  * @param private           a reference to the icd_nw_api private member
  */
 static void
-tor_ip_down(const gchar *network_type, guint network_attrs,
-                 const gchar *network_id, const gchar *interface_name,
-                 icd_nw_ip_down_cb_fn ip_down_cb, gpointer ip_down_cb_token,
-                 gpointer *private)
+tor_ip_down(const gchar * network_type, guint network_attrs,
+	    const gchar * network_id, const gchar * interface_name,
+	    icd_nw_ip_down_cb_fn ip_down_cb, gpointer ip_down_cb_token,
+	    gpointer * private)
 {
-  //fprintf(stderr, "TOR LINK DOWN\n");
-  ip_down_cb(ICD_NW_SUCCESS, ip_down_cb_token);
+	ILOG_DEBUG("TOR LINK DOWN");
+	ip_down_cb(ICD_NW_SUCCESS, ip_down_cb_token);
+}
+
+static void tor_network_destruct(gpointer * private)
+{
+	free_tor_dbus();
+#if 0
+	ipv4_private *priv = *private;
+
+	if (priv->network_data_list)
+		ILOG_CRIT("ipv4 still has connected networks");
+
+	icd_dbus_disconnect_system_bcast_signal(ICD_DBUS_AUTOCONF_INTERFACE,
+						icd_ipv4_autoconf_cb, priv,
+						"member='"
+						ICD_AUTOCONF_CHANGED_SIG "'");
+	g_free(priv);
+	*private = NULL;
+#endif
 }
 
 /** Tor network module initialization function.
@@ -100,24 +114,30 @@ tor_ip_down(const gchar *network_type, guint network_attrs,
  *        closed
  * @return TRUE on succes; FALSE on failure whereby the module is unloaded
  */
-gboolean icd_nw_init (struct icd_nw_api *network_api,
-		      icd_nw_watch_pid_fn watch_cb,
-		      gpointer watch_cb_token,
-		      icd_nw_close_fn close_cb)
+gboolean icd_nw_init(struct icd_nw_api *network_api,
+		     icd_nw_watch_pid_fn watch_cb,
+		     gpointer watch_cb_token, icd_nw_close_fn close_cb)
 {
-  network_api->version = ICD_NW_MODULE_VERSION;
-  network_api->ip_up = tor_ip_up;
-  network_api->ip_down = tor_ip_down;
-  //network_api->child_exit = ...;
-  //network_api->network_destruct = ...;
-  //network_api->private = priv;
+	/* TODO */
+	void *user_data = NULL;
+
+	network_api->version = ICD_NW_MODULE_VERSION;
+	network_api->ip_up = tor_ip_up;
+	network_api->ip_down = tor_ip_down;
+
+	if (setup_tor_dbus(user_data)) {
+		ILOG_ERR("Could not request dbus interface");
+		return FALSE;
+	}
+	//network_api->child_exit = ...;
+	network_api->network_destruct = tor_network_destruct;
+	//network_api->private = priv;
 #if 0
-  priv->watch_fn = watch_fn;
-  priv->watch_fn_token = watch_fn_token;
-  priv->close_fn = close_fn;
-  priv->status_change_fn = status_change_fn;
+	priv->watch_fn = watch_fn;
+	priv->watch_fn_token = watch_fn_token;
+	priv->close_fn = close_fn;
+	priv->status_change_fn = status_change_fn;
 #endif
 
-
-  return TRUE;
+	return TRUE;
 }

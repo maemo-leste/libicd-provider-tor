@@ -17,10 +17,13 @@ plugin_LTLIBRARIES = \
 
 libicd_provider_tor_la_SOURCES = \
 	libicd_provider_tor.c \
-	libicd_tor_config.c
+	libicd_tor_config.c \
 	libicd_tor.h
 
 libicd_network_tor_la_SOURCES = \
 	libicd_network_tor.c \
-	libicd_tor_config.c
+	dbus_tor.c \
+	dbus_tor.h \
+	dbus_tor_shared.h \
+	libicd_tor_config.c \
 	libicd_tor.h
