@@ -27,6 +27,6 @@ libicd_network_tor_la_SOURCES = \
 	libicd_network_tor.h \
 	dbus_tor.c \
 	dbus_tor.h \
-	dbus_tor_shared.h \
 	libicd_tor_config.c \
+	libid_tor_shared.h \
 	libicd_tor.h

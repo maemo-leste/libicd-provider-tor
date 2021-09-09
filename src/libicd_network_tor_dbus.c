@@ -5,6 +5,7 @@
 #include "dbus_tor.h"
 #include "libicd_network_tor.h"
 
+#if 0
 DBusHandlerResult start_callback(DBusConnection * connection,
 				 DBusMessage * message, void *user_data)
 {
@@ -29,6 +30,7 @@ DBusHandlerResult start_callback(DBusConnection * connection,
 
 	return DBUS_HANDLER_RESULT_HANDLED;
 }
+#endif
 
 DBusHandlerResult getstatus_callback(DBusConnection * connection,
 				     DBusMessage * message, void *user_data)

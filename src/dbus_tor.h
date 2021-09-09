@@ -1,6 +1,6 @@
 #ifndef __DBUS_TOR_H
 #define __DBUS_TOR_H
-#include "dbus_tor_shared.h"
+#include "libicd_tor_shared.h"
 
 #include "icd/support/icd_dbus.h"
 #include "icd/support/icd_log.h"
