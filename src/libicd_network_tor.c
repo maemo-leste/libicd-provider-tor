@@ -336,6 +336,20 @@ static void tor_child_exit(const pid_t pid,
 	return;
 }
 
+static void gconf_callback(GConfClient * client, guint cnxn_id,
+			   GConfEntry * entry, gpointer user_data)
+{
+	network_tor_private *priv = user_data;
+	gboolean system_wide_enabled = gconf_value_get_bool(entry->value);
+	fprintf(stderr, "gconf_callback: system_wide = %d\n",
+		system_wide_enabled);
+
+	network_tor_state new_state;
+	memcpy(&new_state, &priv->state, sizeof(network_tor_state));
+	new_state.system_wide_enabled = system_wide_enabled;
+	tor_state_change(priv, NULL, new_state, EVENT_SOURCE_GCONF_CHANGE);
+}
+
 /** Tor network module initialization function.
  * @param network_api icd_nw_api structure filled in by the module
  * @param watch_cb function to inform ICd that a child process is to be
@@ -345,7 +359,7 @@ static void tor_child_exit(const pid_t pid,
  *        closed
  * @return TRUE on succes; FALSE on failure whereby the module is unloaded
  */
-gboolean icd_nw_init(struct icd_nw_api * network_api,
+gboolean icd_nw_init(struct icd_nw_api *network_api,
 		     icd_nw_watch_pid_fn watch_fn, gpointer watch_fn_token,
 		     icd_nw_close_fn close_fn,
 		     icd_nw_status_change_fn status_change_fn,
@@ -364,9 +378,27 @@ gboolean icd_nw_init(struct icd_nw_api * network_api,
 	priv->state.tor_bootstrapped_running = FALSE;
 	priv->state.tor_bootstrapped = TRUE;
 
+	priv->gconf_client = gconf_client_get_default();
+	GError *error = NULL;
+	gconf_client_add_dir(priv->gconf_client, GC_NETWORK_TYPE,
+			     GCONF_CLIENT_PRELOAD_NONE, &error);
+	if (error != NULL) {
+		ILOG_ERR("Could not monitor gconf dir for changes");
+		g_clear_error(&error);
+		goto err;
+	}
+	priv->gconf_cb_id_systemwide =
+	    gconf_client_notify_add(priv->gconf_client, GC_TOR_SYSTEM,
+				    gconf_callback, (void *)priv, NULL, &error);
+	if (error != NULL) {
+		ILOG_ERR("Could not monitor gconf system wide key for changes");
+		g_clear_error(&error);
+		goto err;
+	}
+
 	if (setup_tor_dbus(priv)) {
 		ILOG_ERR("Could not request dbus interface");
-		return FALSE;
+		goto err;
 	}
 
 	network_api->network_destruct = tor_network_destruct;
@@ -384,4 +416,14 @@ gboolean icd_nw_init(struct icd_nw_api * network_api,
 #endif
 
 	return TRUE;
+
+ err:
+	if (priv->gconf_client) {
+		g_object_unref(priv->gconf_client);
+		priv->gconf_client = NULL;
+	}
+
+	g_free(priv);
+
+	return FALSE;
 }

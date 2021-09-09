@@ -12,6 +12,23 @@ gboolean string_equal(const char *a, const char *b)
 	return FALSE;
 }
 
+tor_network_data *icd_tor_find_first_network_data(network_tor_private * private)
+{
+	GSList *l;
+
+	for (l = private->network_data_list; l; l = l->next) {
+		tor_network_data *found = (tor_network_data *) l->data;
+
+		if (!found)
+			ILOG_WARN("tor network data is NULL");
+		else {
+			return found;
+		}
+	}
+
+	return NULL;
+}
+
 tor_network_data *icd_tor_find_network_data(const gchar * network_type,
 					    guint network_attrs,
 					    const gchar * network_id,

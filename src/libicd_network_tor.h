@@ -45,6 +45,9 @@ struct _network_tor_private {
 
 	GSList *network_data_list;
 
+	GConfClient *gconf_client;
+	guint gconf_cb_id_systemwide;
+
 	network_tor_state state;
 };
 typedef struct _network_tor_private network_tor_private;
@@ -84,6 +87,8 @@ gboolean icd_nw_init(struct icd_nw_api *network_api,
 void network_stop_all(tor_network_data * network_data);
 void network_free_all(tor_network_data * network_data);
 pid_t spawn_as(const char *username, const char *pathname, char *args[]);
+tor_network_data *icd_tor_find_first_network_data(network_tor_private *
+						  private);
 tor_network_data *icd_tor_find_network_data(const gchar * network_type,
 					    guint network_attrs,
 					    const gchar * network_id,
