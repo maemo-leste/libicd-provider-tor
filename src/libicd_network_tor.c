@@ -19,160 +19,146 @@
  *
  */
 
-#include <string.h>
-#include <stdio.h>
-#include <glib.h>
-#include <gconf/gconf-client.h>
-#include <pwd.h>
+#include "libicd_network_tor.h"
 
-#include <osso-ic-gconf.h>
-#include "icd/support/icd_log.h"
-#include <network_api.h>
+/*
+ * TODO:
+ *
+ * Variables:
+ *
+ * 1. IAP connected or not (or should be connected or not)
+ * 2. IAP has service provider or not
+ * 3. Value of gconf key (system wide)
+ * 4. Information received from dbus (?) - what if someone does manual start or
+ *    stop? (We don't want to bring down the network in such a case, unless it
+ *    is a provider, but then the provider will do that itself based on the DBus
+ *    interface)
+ * 5. ...
+ *
+ * States (maybe have various states):
+ *
+ * - 
+ *
+ *
+ * TODO: do we disallow dbus calls when we are in certain states? like trying to
+ * get the interface up by starting tor? then dbus calls to stop Tor could be
+ * weird
+ *
+ */
 
-#include "dbus_tor.h"
-#include "libicd_tor.h"
-
-struct _network_tor_private {
-	/* For pid monitoring */
-	icd_nw_watch_pid_fn watch_cb;
-	gpointer watch_cb_token;
-
-	icd_nw_close_fn close_cb;
-
-#if 0
-	icd_srv_limited_conn_fn limited_conn_fn;
-#endif
-
-	GSList *network_data_list;
-};
-typedef struct _network_tor_private network_tor_private;
-
-struct _tor_network_data {
-	network_tor_private *private;
-
-	icd_nw_ip_up_cb_fn ip_up_cb;
-	gpointer ip_up_cb_token;
-
-	/* Tor pid */
-	pid_t tor_pid;
-
-	/* Tor command auth pw/token */
-	char *tor_stem_auth;
-
-	/* "Wait for Tor" stem script */
-	pid_t wait_for_tor_pid;
-
-	/* For matching / callbacks later on (like close and limited_conn callback) */
-	gchar *network_type;
-	guint network_attrs;
-	gchar *network_id;
-};
-typedef struct _tor_network_data tor_network_data;
-
-/* XXX: Taken from ipv4 module */
-static gboolean string_equal(const char *a, const char *b)
+static void tor_state_change(network_tor_private * private,
+			     tor_network_data * network_data,
+			     network_tor_state new_state, int source)
 {
-	if (!a)
-		return !b;
+	network_tor_state current_state = private->state;
 
-	if (b)
-		return !strcmp(a, b);
+	if (source == EVENT_SOURCE_IP_UP) {
+		if (current_state.iap_connected) {
+			ILOG_ERR
+			    ("ip_up called when we are already connected\n");
+			/* Figure out how to handle this */
+		}
 
-	return FALSE;
-}
+		/* Add network to network_data */
+		private->network_data_list =
+		    g_slist_prepend(private->network_data_list, network_data);
 
-static tor_network_data *icd_tor_find_network_data(const gchar * network_type,
-						   guint network_attrs,
-						   const gchar * network_id,
-						   network_tor_private *
-						   private)
-{
-	GSList *l;
+		/* Check if we want to start Tor (system wide enabled), or if we just
+		 * call the callback right now */
+		if (current_state.system_wide_enabled) {
+			int start_ret = 0;
 
-	for (l = private->network_data_list; l; l = l->next) {
-		tor_network_data *found = (tor_network_data *) l->data;
+			start_ret =
+			    startup_tor(network_data, new_state.active_config);
 
-		if (!found)
-			ILOG_WARN("tor network data is NULL");
-		else {
-			if (found->network_attrs == network_attrs &&
-			    string_equal(found->network_type, network_type) &&
-			    string_equal(found->network_id, network_id)) {
-				return found;
+			if (start_ret != 0) {
+				icd_nw_ip_up_cb_fn up_cb =
+				    network_data->ip_up_cb;
+				gpointer up_token =
+				    network_data->ip_up_cb_token;
+
+				if (start_ret == 1) {
+					network_free_all(network_data);
+				} else if (start_ret == 2) {
+					network_stop_all(network_data);
+					network_free_all(network_data);
+				}
+
+				new_state.iap_connected = FALSE;
+				up_cb(ICD_NW_ERROR, NULL, up_token);
+			} else {
+				new_state.tor_running = TRUE;
+				new_state.tor_bootstrapped_running = TRUE;
+				/* ip_up_cb will be called later in the bootstrap pid exit */
 			}
+		} else {
+			/* System wide is disabled, so let's just call ip_up_cb right away */
+			network_data->ip_up_cb(ICD_NW_SUCCESS, NULL,
+					       network_data->ip_up_cb_token,
+					       NULL);
+			/* TODO: do we need to set a specific state here? */
 		}
-	}
+	} else if (source == EVENT_SOURCE_IP_DOWN) {
+		icd_nw_ip_down_cb_fn down_cb = network_data->ip_down_cb;
+		gpointer down_token = network_data->ip_down_cb_token;
 
-	return NULL;
-}
+		/* Stop Tor etc, free network data */
+		network_stop_all(network_data);
+		network_free_all(network_data);
 
-/* pathname and arg are like in execv, returns pid, 0 is error */
-static pid_t spawn_as(const char *username, const char *pathname, char *args[])
-{
-	struct passwd *ent = getpwnam(username);
-	if (ent == NULL) {
-		ILOG_CRIT("spawn_tor: getpwnam failed\n");
-		return 0;
-	}
+		new_state.tor_running = FALSE;
+		new_state.tor_bootstrapped_running = FALSE;
 
-	pid_t pid = fork();
-	if (pid < 0) {
-		ILOG_CRIT("spawn_tor: fork() failed\n");
-		return 0;
-	} else if (pid == 0) {
-		if (setgid(ent->pw_gid)) {
-			ILOG_CRIT("setgid failed\n");
-			exit(1);
+		down_cb(ICD_NW_SUCCESS, down_token);
+	} else if (source == EVENT_SOURCE_GCONF_CHANGE) {
+		/* Might not have network_data here */
+	} else if (source == EVENT_SOURCE_TOR_PID_EXIT) {
+		if (!current_state.tor_running) {
+			ILOG_ERR
+			    ("Received tor pid exit but we don't think it was running");
+			/* Figure out how to handle this */
+		} else {
+			/* Something killed Tor (but not us, since we never hit this code
+			 * path when we kill Tor) */
+			network_data->tor_pid = 0;
+
+			/* This will call tor_disconnect, so we don't free/stop here, since
+			 * ip_down should be called */
+			private->close_cb(ICD_NW_ERROR,
+					  "Tor process quit (unexpectedly)",
+					  network_data->network_type,
+					  network_data->network_attrs,
+					  network_data->network_id);
+
 		}
-		if (setuid(ent->pw_uid)) {
-			ILOG_CRIT("setuid failed\n");
-			exit(1);
-		}
-		execv(pathname, args);
-
-		ILOG_CRIT("execv failed\n");
-		exit(1);
-	} else {
-		ILOG_DEBUG("spawn_as got pid: %d\n", pid);
-		return pid;
-	}
-
-	return 0;		// Failure
-}
-
-static void network_free_all(tor_network_data * network_data)
-{
-	network_tor_private *priv = network_data->private;
-	if (priv->network_data_list) {
-		priv->network_data_list =
-		    g_slist_remove(priv->network_data_list, network_data);
-	}
-
-	g_free(network_data->network_type);
-	g_free(network_data->network_id);
-
-	network_data->private = NULL;
-
-	g_free(network_data);
-}
-
-static void network_stop_all(tor_network_data * network_data)
-{
-	if (network_data->tor_pid != 0) {
-		kill(network_data->tor_pid, SIGTERM);
-		network_data->tor_pid = 0;
-	}
-	if (network_data->wait_for_tor_pid != 0) {
-		kill(network_data->wait_for_tor_pid, SIGTERM);
+	} else if (source == EVENT_SOURCE_TOR_BOOTSTRAPPED_PID_EXIT) {
 		network_data->wait_for_tor_pid = 0;
-	}
-}
 
-gboolean icd_nw_init(struct icd_nw_api *network_api,
-		     icd_nw_watch_pid_fn watch_fn, gpointer watch_fn_token,
-		     icd_nw_close_fn close_fn,
-		     icd_nw_status_change_fn status_change_fn,
-		     icd_nw_renew_fn renew_fn);
+		if (new_state.tor_bootstrapped) {
+			new_state.iap_connected = TRUE;
+			network_data->ip_up_cb(ICD_NW_SUCCESS, NULL,
+					       network_data->ip_up_cb_token,
+					       NULL);
+		} else {
+			icd_nw_ip_up_cb_fn up_cb = network_data->ip_up_cb;
+			gpointer up_token = network_data->ip_up_cb_token;
+
+			/* Maybe we should not free here */
+			new_state.iap_connected = FALSE;
+			network_free_all(network_data);
+
+			up_cb(ICD_NW_ERROR, NULL, up_token);
+		}
+	}
+
+	/* Free old active_config if it is not the same pointer as in new_state */
+	if (current_state.active_config != NULL
+	    && current_state.active_config != new_state.active_config) {
+		free(current_state.active_config);
+	}
+	// Move to new state
+	memcpy(&private->state, &new_state, sizeof(network_tor_state));
+}
 
 /** Function for configuring an IP address.
  * @param network_type network type
@@ -204,75 +190,12 @@ static void tor_ip_up(const gchar * network_type,
 	network_data->ip_up_cb_token = ip_up_cb_token;
 	network_data->private = priv;
 
-	/* TODO: read gconf, and maybe do nothing based on gconf */
+	network_tor_state new_state;
+	memcpy(&new_state, &priv->state, sizeof(network_tor_state));
+	new_state.iap_connected = TRUE;
+	new_state.active_config = get_active_config();
 
-	char *active_config = get_active_config();
-
-	char config_filename[256];
-	if (snprintf
-	    (config_filename, 256, "/etc/tor/torrc-network-%s",
-	     active_config) >= 256) {
-		ILOG_WARN("Unable to allocate torrc config filename\n");
-		ip_up_cb(ICD_NW_ERROR, NULL, ip_up_cb_token);
-		network_stop_all(network_data);
-		network_free_all(network_data);
-		return;
-	}
-
-	char *config_content = generate_config(active_config);
-	GError *error = NULL;
-	g_file_set_contents(config_filename, config_content,
-			    strlen(config_content), &error);
-	if (error != NULL) {
-		g_clear_error(&error);
-		ILOG_WARN("Unable to write Tor config file\n");
-		ip_up_cb(ICD_NW_ERROR, NULL, ip_up_cb_token);
-		network_stop_all(network_data);
-		network_free_all(network_data);
-		return;
-	}
-
-	char *argss[] = { "/usr/bin/tor", "-f", config_filename, NULL };
-	pid_t pid = spawn_as("debian-tor", "/usr/bin/tor", argss);
-	if (pid == 0) {
-		ILOG_WARN("Failed to start Tor\n");
-		ip_up_cb(ICD_NW_ERROR, NULL, ip_up_cb_token);
-		network_stop_all(network_data);
-		return;
-	}
-
-	network_data->tor_pid = pid;
-	network_data->private->watch_cb(pid,
-					network_data->private->watch_cb_token);
-
-	gchar *gc_controlport =
-	    g_strjoin("/", GC_TOR, active_config, GC_CONTROLPORT, NULL);
-	GConfClient *gconf = gconf_client_get_default();
-	gint control_port = gconf_client_get_int(gconf, gc_controlport, NULL);
-	g_object_unref(gconf);
-	g_free(gc_controlport);
-	char cport[64];
-	snprintf(cport, 64, "%d", control_port);
-
-	char *argsv[] =
-	    { "/usr/bin/libicd-tor-wait-bootstrapped", cport, NULL };
-
-	pid =
-	    spawn_as("debian-tor", "/usr/bin/libicd-tor-wait-bootstrapped",
-		     argsv);
-	if (pid == 0) {
-		ILOG_WARN("Failed to start wait for bootstrapping script\n");
-		ip_up_cb(ICD_NW_ERROR, NULL, ip_up_cb_token);
-		network_stop_all(network_data);
-		return;
-	}
-	network_data->wait_for_tor_pid = pid;
-	network_data->private->watch_cb(pid,
-					network_data->private->watch_cb_token);
-
-	/* Add it once we have both pids */
-	priv->network_data_list =
-	    g_slist_prepend(priv->network_data_list, network_data);
+	tor_state_change(priv, network_data, new_state, EVENT_SOURCE_IP_UP);
 
 	return;
 }
@@ -305,12 +228,14 @@ tor_ip_down(const gchar * network_type, guint network_attrs,
 	    icd_tor_find_network_data(network_type, network_attrs, network_id,
 				      priv);
 
-	if (network_data) {
-		network_stop_all(network_data);
-		network_free_all(network_data);
-	}
+	network_data->ip_down_cb = ip_down_cb;
+	network_data->ip_down_cb_token = ip_down_cb_token;
 
-	ip_down_cb(ICD_NW_SUCCESS, ip_down_cb_token);
+	network_tor_state new_state;
+	memcpy(&new_state, &priv->state, sizeof(network_tor_state));
+	new_state.iap_connected = FALSE;
+
+	tor_state_change(priv, network_data, new_state, EVENT_SOURCE_IP_DOWN);
 }
 
 static void tor_network_destruct(gpointer * private)
@@ -341,6 +266,7 @@ static void tor_network_destruct(gpointer * private)
 static void tor_child_exit(const pid_t pid,
 			   const gint exit_status, gpointer * private)
 {
+	/* TODO: add state logic here */
 	GSList *l;
 	network_tor_private *priv = *private;
 	tor_network_data *network_data;
@@ -379,34 +305,32 @@ static void tor_child_exit(const pid_t pid,
 	}
 
 	if (pid_type == TOR_PID) {
-		/* If we get here, we probably did not kill Tor ourselves, since we
-		 * typically remove the network_data right after that, so we will also
-		 * (always) issue priv->close_fn here */
-		network_data->tor_pid = 0;
-
-		ILOG_DEBUG("tor_child_exit for pid: %d\n", pid);
 		ILOG_INFO("Tor process stopped");
 
-		/* This will call tor_disconnect, so we don't free/stop here */
-		priv->close_cb(ICD_NW_ERROR, "Tor process quit (unexpectedly)",
-			       network_data->network_type,
-			       network_data->network_attrs,
-			       network_data->network_id);
+		network_tor_state new_state;
+		memcpy(&new_state, &priv->state, sizeof(network_tor_state));
+		new_state.tor_running = FALSE;
+
+		tor_state_change(priv, network_data, new_state,
+				 EVENT_SOURCE_TOR_PID_EXIT);
 	} else if (pid_type == WAIT_FOR_TOR_PID) {
-		network_data->wait_for_tor_pid = 0;
+
 		ILOG_INFO("Got wait-for-tor pid: %d with status %d", pid,
 			  exit_status);
 
+		network_tor_state new_state;
+		memcpy(&new_state, &priv->state, sizeof(network_tor_state));
+		new_state.tor_bootstrapped_running = FALSE;
+
 		if (exit_status == 0) {
-			network_data->ip_up_cb(ICD_NW_SUCCESS, NULL,
-					       network_data->ip_up_cb_token,
-					       NULL);
+			new_state.tor_bootstrapped = TRUE;
 		} else {
 			ILOG_WARN("wait-for-tor failed with %d\n", exit_status);
-			network_data->ip_up_cb(ICD_NW_ERROR, NULL,
-					       network_data->ip_up_cb_token);
-			/* This will make icd2 issue disconnect, so we don't free/stop here */
+			new_state.tor_bootstrapped = FALSE;
 		}
+
+		tor_state_change(priv, network_data, new_state,
+				 EVENT_SOURCE_TOR_BOOTSTRAPPED_PID_EXIT);
 	}
 
 	return;
@@ -432,6 +356,13 @@ gboolean icd_nw_init(struct icd_nw_api * network_api,
 	network_api->version = ICD_NW_MODULE_VERSION;
 	network_api->ip_up = tor_ip_up;
 	network_api->ip_down = tor_ip_down;
+
+	priv->state.system_wide_enabled = get_system_wide_enabled();
+	priv->state.active_config = NULL;
+	priv->state.iap_connected = FALSE;
+	priv->state.tor_running = FALSE;
+	priv->state.tor_bootstrapped_running = FALSE;
+	priv->state.tor_bootstrapped = TRUE;
 
 	if (setup_tor_dbus(priv)) {
 		ILOG_ERR("Could not request dbus interface");
