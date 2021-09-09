@@ -240,20 +240,24 @@ tor_ip_down(const gchar * network_type, guint network_attrs,
 
 static void tor_network_destruct(gpointer * private)
 {
+	network_tor_private *priv = *private;
+
+	if (priv->gconf_client != NULL) {
+		if (priv->gconf_cb_id_systemwide != 0) {
+			gconf_client_notify_remove(priv->gconf_client,
+						   priv->
+						   gconf_cb_id_systemwide);
+			priv->gconf_cb_id_systemwide = 0;
+		}
+
+		g_object_unref(priv->gconf_client);
+	}
 	free_tor_dbus();
-#if 0
-	ipv4_private *priv = *private;
 
 	if (priv->network_data_list)
 		ILOG_CRIT("ipv4 still has connected networks");
 
-	icd_dbus_disconnect_system_bcast_signal(ICD_DBUS_AUTOCONF_INTERFACE,
-						icd_ipv4_autoconf_cb, priv,
-						"member='"
-						ICD_AUTOCONF_CHANGED_SIG "'");
 	g_free(priv);
-	*private = NULL;
-#endif
 }
 
 /**
