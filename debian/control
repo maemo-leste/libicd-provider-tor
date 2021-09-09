@@ -28,3 +28,12 @@ Depends: icd2,
  ${shlibs:Depends}
 Description: ICd2 tor network configuration module
  ICd2 tor network configuration module
+
+Package: libicd-tor-dev
+Section: net
+Architecture: any
+Multi-Arch: same
+Depends: ${shlibs:Depends}, ${misc:Depends}, icd2-dev
+Description: Development files for the Internet Connectivity Daemon Tor modules
+ This package contains headers files for the Internet Connectivity Daemon Tor
+ modules.
