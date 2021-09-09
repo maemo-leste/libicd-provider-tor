@@ -1,2 +1,3 @@
 usr/lib/icd2/libicd_network_tor.so
 etc/gconf/schemas/libicd-network-tor.schemas
+usr/bin/libicd-tor-wait-bootstrapped
