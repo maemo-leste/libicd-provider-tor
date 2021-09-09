@@ -89,6 +89,7 @@ static void tor_state_change(network_tor_private * private,
 			} else {
 				new_state.tor_running = TRUE;
 				new_state.tor_bootstrapped_running = TRUE;
+				new_state.tor_bootstrapped = FALSE;
 				/* ip_up_cb will be called later in the bootstrap pid exit */
 			}
 		} else {
@@ -110,6 +111,7 @@ static void tor_state_change(network_tor_private * private,
 
 		new_state.tor_running = FALSE;
 		new_state.tor_bootstrapped_running = FALSE;
+		new_state.tor_bootstrapped = FALSE;
 
 		down_cb(ICD_NW_SUCCESS, down_token);
 
