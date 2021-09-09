@@ -98,6 +98,8 @@ static void tor_state_change(network_tor_private * private,
 					       NULL);
 			/* TODO: do we need to set a specific state here? */
 		}
+
+		emit_status_signal(new_state);
 	} else if (source == EVENT_SOURCE_IP_DOWN) {
 		icd_nw_ip_down_cb_fn down_cb = network_data->ip_down_cb;
 		gpointer down_token = network_data->ip_down_cb_token;
@@ -110,6 +112,8 @@ static void tor_state_change(network_tor_private * private,
 		new_state.tor_bootstrapped_running = FALSE;
 
 		down_cb(ICD_NW_SUCCESS, down_token);
+
+		emit_status_signal(new_state);
 	} else if (source == EVENT_SOURCE_GCONF_CHANGE) {
 		/* Might not have network_data here */
 	} else if (source == EVENT_SOURCE_TOR_PID_EXIT) {
@@ -131,11 +135,14 @@ static void tor_state_change(network_tor_private * private,
 					  network_data->network_id);
 
 		}
+
+		emit_status_signal(new_state);
 	} else if (source == EVENT_SOURCE_TOR_BOOTSTRAPPED_PID_EXIT) {
 		network_data->wait_for_tor_pid = 0;
 
 		if (new_state.tor_bootstrapped) {
 			new_state.iap_connected = TRUE;
+
 			network_data->ip_up_cb(ICD_NW_SUCCESS, NULL,
 					       network_data->ip_up_cb_token,
 					       NULL);
@@ -149,6 +156,8 @@ static void tor_state_change(network_tor_private * private,
 
 			up_cb(ICD_NW_ERROR, NULL, up_token);
 		}
+
+		emit_status_signal(new_state);
 	}
 
 	/* Free old active_config if it is not the same pointer as in new_state */
@@ -242,11 +251,12 @@ static void tor_network_destruct(gpointer * private)
 {
 	network_tor_private *priv = *private;
 
+	ILOG_DEBUG("tor_network_destruct");
+
 	if (priv->gconf_client != NULL) {
 		if (priv->gconf_cb_id_systemwide != 0) {
 			gconf_client_notify_remove(priv->gconf_client,
-						   priv->
-						   gconf_cb_id_systemwide);
+						   priv->gconf_cb_id_systemwide);
 			priv->gconf_cb_id_systemwide = 0;
 		}
 
@@ -380,7 +390,7 @@ gboolean icd_nw_init(struct icd_nw_api *network_api,
 	priv->state.iap_connected = FALSE;
 	priv->state.tor_running = FALSE;
 	priv->state.tor_bootstrapped_running = FALSE;
-	priv->state.tor_bootstrapped = TRUE;
+	priv->state.tor_bootstrapped = FALSE;
 
 	priv->gconf_client = gconf_client_get_default();
 	GError *error = NULL;

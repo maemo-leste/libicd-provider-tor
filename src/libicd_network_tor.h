@@ -3,12 +3,14 @@
 #include <string.h>
 #include <stdio.h>
 #include <glib.h>
-#include <gconf/gconf-client.h>
 #include <pwd.h>
 
+#include <gconf/gconf-client.h>
+#include <dbus/dbus-glib-lowlevel.h>
 #include <osso-ic-gconf.h>
-#include "icd/support/icd_log.h"
 #include <network_api.h>
+
+#include "icd/support/icd_log.h"
 
 #include "dbus_tor.h"
 #include "libicd_tor.h"
@@ -102,5 +104,11 @@ int startup_tor(tor_network_data * network_data, char *config);
 #define EVENT_SOURCE_TOR_PID_EXIT 4
 #define EVENT_SOURCE_TOR_BOOTSTRAPPED_PID_EXIT 5
 /* TODO: extend with dbus */
+
+DBusHandlerResult start_callback(DBusConnection * connection,
+				 DBusMessage * message, void *user_data);
+DBusHandlerResult getstatus_callback(DBusConnection * connection,
+				     DBusMessage * message, void *user_data);
+void emit_status_signal(network_tor_state state);
 
 #endif

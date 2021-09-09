@@ -23,6 +23,7 @@ libicd_provider_tor_la_SOURCES = \
 libicd_network_tor_la_SOURCES = \
 	libicd_network_tor.c \
 	libicd_network_tor_helpers.c \
+	libicd_network_tor_dbus.c \
 	libicd_network_tor.h \
 	dbus_tor.c \
 	dbus_tor.h \

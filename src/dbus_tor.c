@@ -1,26 +1,21 @@
-#include <dbus/dbus-glib-lowlevel.h>
+#include <stdio.h>
 
 #include "libicd_tor.h"
-#include "icd/support/icd_dbus.h"
-#include "icd/support/icd_log.h"
 #include "dbus_tor.h"
-
-#include <stdio.h>
+#include "libicd_network_tor.h"
 
 struct tor_method_callbacks {
 	const gchar *method_name;
 	DBusHandleMessageFunction call;
 };
 
-static DBusHandlerResult start_callback(DBusConnection * connection,
-					DBusMessage * message, void *user_data);
 static DBusHandlerResult error_callback(DBusConnection * connection,
 					DBusMessage * message, void *user_data);
 
 static struct tor_method_callbacks callbacks[] = {
-	{"Start", &start_callback},
+	{"Start", &error_callback},
 	{"Stop", &error_callback},
-	{"GetStatus", &error_callback},
+	{"GetStatus", &getstatus_callback},
 	{"GetActiveConfig", &error_callback},
 	/*
 	   {"Stop", &stop_callback},
@@ -66,7 +61,6 @@ tor_icd_dbus_api_request(DBusConnection * connection, DBusMessage * message,
 	return error_callback(connection, message, user_data);
 }
 
-
 static DBusHandlerResult error_callback(DBusConnection * connection,
 					DBusMessage * message, void *user_data)
 {
@@ -84,32 +78,6 @@ static DBusHandlerResult error_callback(DBusConnection * connection,
 	return DBUS_HANDLER_RESULT_HANDLED;
 }
 
-static DBusHandlerResult start_callback(DBusConnection * connection,
-					DBusMessage * message, void *user_data)
-{
-	DBusMessage *reply = dbus_message_new_method_return(message);
-	if (!reply) {
-        ILOG_WARN("icd_dbus_send_system_msg failed");
-        return DBUS_HANDLER_RESULT_NEED_MEMORY;
-	}
-	dbus_int32_t success_code = TOR_DBUS_METHOD_START_RESULT_OK;
-	dbus_message_append_args(reply,
-				 DBUS_TYPE_INT32, &success_code,
-				 DBUS_TYPE_INVALID);
-
-	if (icd_dbus_send_system_msg(reply) == FALSE) {
-        ILOG_WARN("icd_dbus_send_system_msg failed");
-        dbus_message_unref(reply);
-
-        return DBUS_HANDLER_RESULT_HANDLED;
-	}
-
-	dbus_message_unref(reply);
-
-	return DBUS_HANDLER_RESULT_HANDLED;
-}
-
-
 int setup_tor_dbus(void *user_data)
 {
 	ILOG_DEBUG("Registering ICD2 Tor dbus service");
@@ -126,7 +94,6 @@ int setup_tor_dbus(void *user_data)
 
 	return 0;
 }
-
 
 int free_tor_dbus(void)
 {
