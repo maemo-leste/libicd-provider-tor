@@ -31,7 +31,7 @@ void tor_state_change(network_tor_private * private,
 		 * and then *not* start Tor, and just treat it as system-wide disabled. */
 
 		if (current_state.iap_connected) {
-			ILOG_ERR("ip_up called when we are already connected\n");
+			TN_ERR("ip_up called when we are already connected\n");
 			/* Figure out how to handle this */
 		}
 
@@ -95,14 +95,14 @@ void tor_state_change(network_tor_private * private,
 
 		emit_status_signal(new_state);
 	} else if (source == EVENT_SOURCE_GCONF_CHANGE) {
-		ILOG_INFO("Tor system_wide status changed via gconf");
+		TN_INFO("Tor system_wide status changed via gconf");
 
 		/* We don't act on this in service provider mode */
 		if (!current_state.service_provider_mode && current_state.iap_connected) {
 			tor_network_data *network_data = icd_tor_find_first_network_data(private);
 
 			if (network_data == NULL) {
-				ILOG_ERR("iap_connected is TRUE, but we have no network_data");
+				TN_ERR("iap_connected is TRUE, but we have no network_data");
 			} else {
 				if (new_state.system_wide_enabled
 				    && current_state.system_wide_enabled != new_state.system_wide_enabled) {
@@ -113,7 +113,7 @@ void tor_state_change(network_tor_private * private,
 					start_ret = startup_tor(network_data, new_state.active_config);
 
 					if (start_ret == 1) {
-						ILOG_ERR("Could not start Tor triggered through gconf change");
+						TN_ERR("Could not start Tor triggered through gconf change");
 						/* TODO: take down the interface here? */
 					} else if (start_ret == 2) {
 						/* TODO: Do we kill tor pids here? */
@@ -133,13 +133,13 @@ void tor_state_change(network_tor_private * private,
 		}
 	} else if (source == EVENT_SOURCE_DBUS_CALL_START) {
 		if (!current_state.service_provider_mode) {
-			ILOG_ERR("Got EVENT_SOURCE_DBUS_CALL_START while not in provider mode");
+			TN_ERR("Got EVENT_SOURCE_DBUS_CALL_START while not in provider mode");
 			goto done;
 		}
 
 		tor_network_data *network_data = icd_tor_find_first_network_data(private);
 		if (network_data == NULL) {
-			ILOG_ERR("service_provider_module is TRUE, but we have no network_data");
+			TN_ERR("service_provider_module is TRUE, but we have no network_data");
 			goto done;
 		}
 
@@ -158,13 +158,13 @@ void tor_state_change(network_tor_private * private,
 		emit_status_signal(new_state);
 	} else if (source == EVENT_SOURCE_DBUS_CALL_STOP) {
 		if (!current_state.service_provider_mode) {
-			ILOG_ERR("Got EVENT_SOURCE_DBUS_CALL_STOP while not in provider mode");
+			TN_ERR("Got EVENT_SOURCE_DBUS_CALL_STOP while not in provider mode");
 			goto done;
 		}
 
 		tor_network_data *network_data = icd_tor_find_first_network_data(private);
 		if (network_data == NULL) {
-			ILOG_ERR("service_provider_module is TRUE, but we have no network_data");
+			TN_ERR("service_provider_module is TRUE, but we have no network_data");
 			goto done;
 		}
 
@@ -174,7 +174,7 @@ void tor_state_change(network_tor_private * private,
 		 * emit the signal and have the service provider bring down the network */
 
 		if (!current_state.tor_running) {
-			ILOG_ERR("Received tor pid exit but we don't think it was running");
+			TN_ERR("Received tor pid exit but we don't think it was running");
 			/* Figure out how to handle this */
 		} else {
 			network_data->tor_pid = 0;
@@ -257,7 +257,7 @@ static void tor_ip_up(const gchar * network_type,
 		      icd_nw_ip_up_cb_fn ip_up_cb, gpointer ip_up_cb_token, gpointer * private)
 {
 	network_tor_private *priv = *private;
-	ILOG_DEBUG("tor_ip_up");
+	TN_DEBUG("tor_ip_up");
 
 	tor_network_data *network_data = g_new0(tor_network_data, 1);
 
@@ -306,7 +306,7 @@ tor_ip_down(const gchar * network_type, guint network_attrs,
 	    const gchar * network_id, const gchar * interface_name,
 	    icd_nw_ip_down_cb_fn ip_down_cb, gpointer ip_down_cb_token, gpointer * private)
 {
-	ILOG_DEBUG("tor_ip_down");
+	TN_DEBUG("tor_ip_down");
 	network_tor_private *priv = *private;
 
 	tor_network_data *network_data = icd_tor_find_network_data(network_type, network_attrs, network_id,
@@ -327,7 +327,7 @@ static void tor_network_destruct(gpointer * private)
 {
 	network_tor_private *priv = *private;
 
-	ILOG_DEBUG("tor_network_destruct");
+	TN_DEBUG("tor_network_destruct");
 
 	if (priv->gconf_client != NULL) {
 		if (priv->gconf_cb_id_systemwide != 0) {
@@ -340,7 +340,7 @@ static void tor_network_destruct(gpointer * private)
 	free_tor_dbus();
 
 	if (priv->network_data_list)
-		ILOG_CRIT("ipv4 still has connected networks");
+		TN_CRIT("ipv4 still has connected networks");
 
 	g_free(priv);
 }
@@ -380,17 +380,17 @@ static void tor_child_exit(const pid_t pid, const gint exit_status, gpointer * p
 			/* This can happen if we are manually disconnecting, and we already
 			   free the network data and kill tor, then we won't have the
 			   network_data anymore */
-			ILOG_DEBUG("tor_child_exit: network_data_list contains empty network_data");
+			TN_DEBUG("tor_child_exit: network_data_list contains empty network_data");
 		}
 	}
 
 	if (!l) {
-		ILOG_ERR("tor_child_exit: got pid %d but did not find network_data\n", pid);
+		TN_ERR("tor_child_exit: got pid %d but did not find network_data\n", pid);
 		return;
 	}
 
 	if (pid_type == TOR_PID) {
-		ILOG_INFO("Tor process stopped");
+		TN_INFO("Tor process stopped");
 
 		network_tor_state new_state;
 		memcpy(&new_state, &priv->state, sizeof(network_tor_state));
@@ -400,7 +400,7 @@ static void tor_child_exit(const pid_t pid, const gint exit_status, gpointer * p
 		tor_state_change(priv, network_data, new_state, EVENT_SOURCE_TOR_PID_EXIT);
 	} else if (pid_type == WAIT_FOR_TOR_PID) {
 
-		ILOG_INFO("Got wait-for-tor pid: %d with status %d", pid, exit_status);
+		TN_INFO("Got wait-for-tor pid: %d with status %d", pid, exit_status);
 
 		network_tor_state new_state;
 		memcpy(&new_state, &priv->state, sizeof(network_tor_state));
@@ -409,7 +409,7 @@ static void tor_child_exit(const pid_t pid, const gint exit_status, gpointer * p
 		if (exit_status == 0) {
 			new_state.tor_bootstrapped = TRUE;
 		} else {
-			ILOG_WARN("wait-for-tor failed with %d\n", exit_status);
+			TN_WARN("wait-for-tor failed with %d\n", exit_status);
 			new_state.tor_bootstrapped = FALSE;
 		}
 
@@ -464,20 +464,20 @@ gboolean icd_nw_init(struct icd_nw_api *network_api,
 	GError *error = NULL;
 	gconf_client_add_dir(priv->gconf_client, GC_NETWORK_TYPE, GCONF_CLIENT_PRELOAD_NONE, &error);
 	if (error != NULL) {
-		ILOG_ERR("Could not monitor gconf dir for changes");
+		TN_ERR("Could not monitor gconf dir for changes");
 		g_clear_error(&error);
 		goto err;
 	}
 	priv->gconf_cb_id_systemwide =
 	    gconf_client_notify_add(priv->gconf_client, GC_TOR_SYSTEM, gconf_callback, (void *)priv, NULL, &error);
 	if (error != NULL) {
-		ILOG_ERR("Could not monitor gconf system wide key for changes");
+		TN_ERR("Could not monitor gconf system wide key for changes");
 		g_clear_error(&error);
 		goto err;
 	}
 
 	if (setup_tor_dbus(priv)) {
-		ILOG_ERR("Could not request dbus interface");
+		TN_ERR("Could not request dbus interface");
 		goto err;
 	}
 

@@ -30,7 +30,7 @@ static DBusHandlerResult start_reply(dbus_int32_t return_code, DBusMessage * rep
 	dbus_message_append_args(reply, DBUS_TYPE_INT32, &return_code, DBUS_TYPE_INVALID);
 
 	if (icd_dbus_send_system_msg(reply) == FALSE) {
-		ILOG_WARN("icd_dbus_send_system_msg failed");
+		TN_WARN("icd_dbus_send_system_msg failed");
 	}
 
 	dbus_message_unref(reply);
@@ -46,7 +46,7 @@ DBusHandlerResult start_callback(DBusConnection * connection, DBusMessage * mess
 
 	DBusMessage *reply = dbus_message_new_method_return(message);
 	if (!reply) {
-		ILOG_WARN("icd_dbus_send_system_msg failed");
+		TN_WARN("icd_dbus_send_system_msg failed");
 		return DBUS_HANDLER_RESULT_NEED_MEMORY;
 	}
 
@@ -65,7 +65,7 @@ DBusHandlerResult start_callback(DBusConnection * connection, DBusMessage * mess
 
 	dbus_error_init(&error);
 	if (dbus_message_get_args(message, &error, DBUS_TYPE_STRING, &config, DBUS_TYPE_INVALID) == FALSE) {
-		ILOG_WARN("start_callback received invalid arguments: %s", error.message);
+		TN_WARN("start_callback received invalid arguments: %s", error.message);
 		dbus_error_free(&error);
 
 		return start_reply(TOR_DBUS_METHOD_START_RESULT_INVALID_ARGS, reply);
@@ -95,7 +95,7 @@ DBusHandlerResult stop_callback(DBusConnection * connection, DBusMessage * messa
 
 	DBusMessage *reply = dbus_message_new_method_return(message);
 	if (!reply) {
-		ILOG_WARN("icd_dbus_send_system_msg failed");
+		TN_WARN("icd_dbus_send_system_msg failed");
 		return DBUS_HANDLER_RESULT_NEED_MEMORY;
 	}
 
@@ -126,7 +126,7 @@ DBusHandlerResult getstatus_callback(DBusConnection * connection, DBusMessage * 
 
 	DBusMessage *reply = dbus_message_new_method_return(message);
 	if (!reply) {
-		ILOG_WARN("icd_dbus_send_system_msg failed");
+		TN_WARN("icd_dbus_send_system_msg failed");
 		return DBUS_HANDLER_RESULT_NEED_MEMORY;
 	}
 
@@ -150,7 +150,7 @@ DBusHandlerResult getstatus_callback(DBusConnection * connection, DBusMessage * 
 	dbus_message_append_args(reply, DBUS_TYPE_STRING, &state, DBUS_TYPE_STRING, &mode, DBUS_TYPE_INVALID);
 
 	if (icd_dbus_send_system_msg(reply) == FALSE) {
-		ILOG_WARN("icd_dbus_send_system_msg failed");
+		TN_WARN("icd_dbus_send_system_msg failed");
 		dbus_message_unref(reply);
 
 		return DBUS_HANDLER_RESULT_HANDLED;
@@ -169,7 +169,7 @@ void emit_status_signal(network_tor_state state)
 
 	msg = dbus_message_new_signal(ICD_TOR_DBUS_PATH, ICD_TOR_DBUS_INTERFACE, "StatusChanged");
 	if (msg == NULL) {
-		ILOG_WARN("Could not construct dbus message for StatusChanged signal");
+		TN_WARN("Could not construct dbus message for StatusChanged signal");
 		return;
 	}
 

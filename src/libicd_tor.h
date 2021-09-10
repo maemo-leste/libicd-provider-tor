@@ -10,4 +10,11 @@ gboolean get_system_wide_enabled(void);
 char *generate_config(const char *config_name);
 char *get_active_config(void);
 
+#define TN_DEBUG(fmt, ...) ILOG_DEBUG(("[TOR NETWORK] "fmt), ##__VA_ARGS__)
+#define TN_INFO(fmt, ...) ILOG_INFO(("[TOR NETWORK] " fmt), ##__VA_ARGS__)
+#define TN_WARN(fmt, ...) ILOG_WARN(("[TOR NETWORK] %s.%d:" fmt), __func__, __LINE__, ##__VA_ARGS__)
+#define TN_ERR(fmt, ...) ILOG_ERR(("[TOR NETWORK] %s.%d:" fmt), __func__, __LINE__, ##__VA_ARGS__)
+#define TN_CRIT(fmt, ...) ILOG_CRIT(("[TOR NETWORK] %s.%d:" fmt), __func__, __LINE__, ##__VA_ARGS__)
+
+
 #endif				/* __LIBICD_TOR_H */

@@ -41,7 +41,7 @@ tor_network_data *icd_tor_find_first_network_data(network_tor_private * private)
 		tor_network_data *found = (tor_network_data *) l->data;
 
 		if (!found)
-			ILOG_WARN("tor network data is NULL");
+			TN_WARN("tor network data is NULL");
 		else {
 			return found;
 		}
@@ -60,7 +60,7 @@ tor_network_data *icd_tor_find_network_data(const gchar * network_type,
 		tor_network_data *found = (tor_network_data *) l->data;
 
 		if (!found)
-			ILOG_WARN("tor network data is NULL");
+			TN_WARN("tor network data is NULL");
 		else {
 			if (found->network_attrs == network_attrs &&
 			    string_equal(found->network_type, network_type) &&
@@ -78,29 +78,29 @@ pid_t spawn_as(const char *username, const char *pathname, char *args[])
 {
 	struct passwd *ent = getpwnam(username);
 	if (ent == NULL) {
-		ILOG_CRIT("spawn_tor: getpwnam failed\n");
+		TN_CRIT("spawn_tor: getpwnam failed\n");
 		return 0;
 	}
 
 	pid_t pid = fork();
 	if (pid < 0) {
-		ILOG_CRIT("spawn_tor: fork() failed\n");
+		TN_CRIT("spawn_tor: fork() failed\n");
 		return 0;
 	} else if (pid == 0) {
 		if (setgid(ent->pw_gid)) {
-			ILOG_CRIT("setgid failed\n");
+			TN_CRIT("setgid failed\n");
 			exit(1);
 		}
 		if (setuid(ent->pw_uid)) {
-			ILOG_CRIT("setuid failed\n");
+			TN_CRIT("setuid failed\n");
 			exit(1);
 		}
 		execv(pathname, args);
 
-		ILOG_CRIT("execv failed\n");
+		TN_CRIT("execv failed\n");
 		exit(1);
 	} else {
-		ILOG_DEBUG("spawn_as got pid: %d\n", pid);
+		TN_DEBUG("spawn_as got pid: %d\n", pid);
 		return pid;
 	}
 
@@ -138,7 +138,7 @@ int startup_tor(tor_network_data * network_data, char *config)
 	char config_filename[256];
 	if (snprintf(config_filename, 256, "/etc/tor/torrc-network-%s", config)
 	    >= 256) {
-		ILOG_WARN("Unable to allocate torrc config filename\n");
+		TN_WARN("Unable to allocate torrc config filename\n");
 		return 1;
 	}
 
@@ -147,18 +147,18 @@ int startup_tor(tor_network_data * network_data, char *config)
 	g_file_set_contents(config_filename, config_content, strlen(config_content), &error);
 	if (error != NULL) {
 		g_clear_error(&error);
-		ILOG_WARN("Unable to write Tor config file\n");
+		TN_WARN("Unable to write Tor config file\n");
 		return 1;
 	}
 
 	char *argss[] = { "/usr/bin/tor", "-f", config_filename, NULL };
 	pid_t pid = spawn_as("debian-tor", "/usr/bin/tor", argss);
 	if (pid == 0) {
-		ILOG_WARN("Failed to start Tor\n");
+		TN_WARN("Failed to start Tor\n");
 		return 1;
 	}
 
-	ILOG_INFO("Got tor_pid: %d\n", pid);
+	TN_INFO("Got tor_pid: %d\n", pid);
 	network_data->tor_pid = pid;
 	network_data->private->watch_cb(pid, network_data->private->watch_cb_token);
 
@@ -174,7 +174,7 @@ int startup_tor(tor_network_data * network_data, char *config)
 
 	pid = spawn_as("debian-tor", "/usr/bin/libicd-tor-wait-bootstrapped", argsv);
 	if (pid == 0) {
-		ILOG_WARN("Failed to start wait for bootstrapping script\n");
+		TN_WARN("Failed to start wait for bootstrapping script\n");
 		return 2;
 	}
 	network_data->wait_for_tor_pid = pid;
