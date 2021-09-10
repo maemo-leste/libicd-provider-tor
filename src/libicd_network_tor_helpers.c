@@ -128,11 +128,9 @@ void network_stop_all(tor_network_data * network_data)
 {
 	if (network_data->tor_pid != 0) {
 		kill(network_data->tor_pid, SIGTERM);
-		network_data->tor_pid = 0;
 	}
 	if (network_data->wait_for_tor_pid != 0) {
 		kill(network_data->wait_for_tor_pid, SIGTERM);
-		network_data->wait_for_tor_pid = 0;
 	}
 }
 

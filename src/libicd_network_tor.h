@@ -45,6 +45,8 @@ struct _network_tor_state {
 	gboolean tor_running;
 	gboolean tor_bootstrapped_running;
 	gboolean tor_bootstrapped;
+
+	gboolean gconf_transition_ongoing;
 #if 0
 	gboolean network_is_tor_service_provider;
 #endif
