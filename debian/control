@@ -1,9 +1,13 @@
 Source: libicd-tor
 Priority: optional
 Maintainer: Merlijn Wajer <merlijn@wizzup.org>
-Build-Depends: debhelper (>> 10), autotools-dev,
- libglib2.0-dev, libgconf2-dev,
- icd2-dev, icd2-osso-ic-dev,
+Build-Depends:
+ debhelper-compat (= 12),
+ libglib2.0-dev,
+ libgconf2-dev,
+ icd2-dev,
+ icd2-osso-ic-dev,
+ maemo-system-services-dev,
 Section: net
 Standards-Version: 4.3.0
 
@@ -11,10 +15,11 @@ Package: libicd-provider-tor
 Section: net
 Architecture: any
 Multi-Arch: same
-Depends: icd2,
+Depends:
+ ${shlibs:Depends},
+ icd2,
  tor,
  python3-stem,
- ${shlibs:Depends}
 Description: ICd2 tor service provider configuration module
  ICd2 tor service provider configuration module
 
@@ -22,10 +27,11 @@ Package: libicd-network-tor
 Section: net
 Architecture: any
 Multi-Arch: same
-Depends: icd2,
+Depends:
+ ${shlibs:Depends},
+ icd2,
  tor,
  python3-stem,
- ${shlibs:Depends}
 Description: ICd2 tor network configuration module
  ICd2 tor network configuration module
 
@@ -33,7 +39,10 @@ Package: libicd-tor-dev
 Section: net
 Architecture: any
 Multi-Arch: same
-Depends: ${shlibs:Depends}, ${misc:Depends}, icd2-dev
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends},
+ icd2-dev,
 Description: Development files for the Internet Connectivity Daemon Tor modules
  This package contains headers files for the Internet Connectivity Daemon Tor
  modules.
