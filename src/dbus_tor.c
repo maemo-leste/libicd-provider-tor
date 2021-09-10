@@ -48,10 +48,14 @@ static struct tor_method_callbacks callbacks[] = {
  * @param message     D-Bus message
  * @param user_data   dbus api data structure
  */
-static DBusHandlerResult
-tor_icd_dbus_api_request(DBusConnection * connection, DBusMessage * message,
-			 void *user_data)
+static DBusHandlerResult tor_icd_dbus_api_request(DBusConnection * connection,
+						  DBusMessage * message,
+						  void *user_data)
 {
+	if (dbus_message_get_type(message) != DBUS_MESSAGE_TYPE_METHOD_CALL) {
+		return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+	}
+
 	TN_DEBUG("ICD2 Tor dbus api request\n");
 
 	const char *member = dbus_message_get_member(message);
