@@ -25,33 +25,103 @@
 #include "dbus_tor.h"
 #include "libicd_network_tor.h"
 
-#if 0
-DBusHandlerResult start_callback(DBusConnection * connection, DBusMessage * message, void *user_data)
+static DBusHandlerResult start_reply(dbus_int32_t return_code, DBusMessage * reply)
 {
-	DBusMessage *reply = dbus_message_new_method_return(message);
-	if (!reply) {
-		ILOG_WARN("icd_dbus_send_system_msg failed");
-		return DBUS_HANDLER_RESULT_NEED_MEMORY;
-	}
-	dbus_int32_t success_code = TOR_DBUS_METHOD_START_RESULT_OK;
-	dbus_message_append_args(reply, DBUS_TYPE_INT32, &success_code, DBUS_TYPE_INVALID);
+	dbus_message_append_args(reply, DBUS_TYPE_INT32, &return_code, DBUS_TYPE_INVALID);
 
 	if (icd_dbus_send_system_msg(reply) == FALSE) {
 		ILOG_WARN("icd_dbus_send_system_msg failed");
-		dbus_message_unref(reply);
-
-		return DBUS_HANDLER_RESULT_HANDLED;
 	}
 
 	dbus_message_unref(reply);
 
 	return DBUS_HANDLER_RESULT_HANDLED;
 }
-#endif
+
+DBusHandlerResult start_callback(DBusConnection * connection, DBusMessage * message, void *user_data)
+{
+	network_tor_private *priv = user_data;
+	DBusError error;
+	const char *config;
+
+	DBusMessage *reply = dbus_message_new_method_return(message);
+	if (!reply) {
+		ILOG_WARN("icd_dbus_send_system_msg failed");
+		return DBUS_HANDLER_RESULT_NEED_MEMORY;
+	}
+
+	if (!priv->state.service_provider_mode) {
+		/* We do not accept dbus commands from non-providers */
+
+		return start_reply(TOR_DBUS_METHOD_START_RESULT_REFUSED, reply);
+	}
+
+	/* We are in provider mode */
+
+	/* Tor already running? */
+	if (priv->state.tor_running == TRUE) {
+		return start_reply(TOR_DBUS_METHOD_START_RESULT_ALREADY_RUNNING, reply);
+	}
+
+	dbus_error_init(&error);
+	if (dbus_message_get_args(message, &error, DBUS_TYPE_STRING, &config, DBUS_TYPE_INVALID) == FALSE) {
+		ILOG_WARN("start_callback received invalid arguments: %s", error.message);
+		dbus_error_free(&error);
+
+		return start_reply(TOR_DBUS_METHOD_START_RESULT_INVALID_ARGS, reply);
+	}
+
+	if (!config_is_known(config)) {
+		return start_reply(TOR_DBUS_METHOD_START_RESULT_INVALID_CONFIG, reply);
+	}
+
+	/* Actually start Tor */
+	network_tor_state new_state;
+	memcpy(&new_state, &priv->state, sizeof(network_tor_state));
+	new_state.active_config = g_strdup(config);
+	tor_state_change(priv, NULL, new_state, EVENT_SOURCE_DBUS_CALL_START);
+
+	if (priv->state.dbus_failed_to_start) {
+		priv->state.dbus_failed_to_start = FALSE;
+		return start_reply(TOR_DBUS_METHOD_START_RESULT_FAILED, reply);
+	}
+
+	return start_reply(TOR_DBUS_METHOD_START_RESULT_OK, reply);
+}
+
+DBusHandlerResult stop_callback(DBusConnection * connection, DBusMessage * message, void *user_data)
+{
+	network_tor_private *priv = user_data;
+
+	DBusMessage *reply = dbus_message_new_method_return(message);
+	if (!reply) {
+		ILOG_WARN("icd_dbus_send_system_msg failed");
+		return DBUS_HANDLER_RESULT_NEED_MEMORY;
+	}
+
+	if (!priv->state.service_provider_mode) {
+		/* We do not accept dbus commands from non-providers */
+
+		return start_reply(TOR_DBUS_METHOD_STOP_RESULT_REFUSED, reply);
+	}
+
+	/* Tor not running? */
+	if (priv->state.tor_running == FALSE) {
+		return start_reply(TOR_DBUS_METHOD_STOP_RESULT_NOT_RUNNING, reply);
+	}
+
+	/* Actually stop Tor */
+	network_tor_state new_state;
+	memcpy(&new_state, &priv->state, sizeof(network_tor_state));
+	tor_state_change(priv, NULL, new_state, EVENT_SOURCE_DBUS_CALL_STOP);
+
+	return start_reply(TOR_DBUS_METHOD_STOP_RESULT_OK, reply);
+}
 
 DBusHandlerResult getstatus_callback(DBusConnection * connection, DBusMessage * message, void *user_data)
 {
 	const char *state = NULL;
+	const char *mode = NULL;
 	network_tor_private *priv = user_data;
 
 	DBusMessage *reply = dbus_message_new_method_return(message);
@@ -62,16 +132,22 @@ DBusHandlerResult getstatus_callback(DBusConnection * connection, DBusMessage * 
 
 	/* TODO: DRY this */
 	if (!priv->state.tor_running) {
-		state = ICD_TOR_SIGNALS_STATUS_STOPPED;
+		state = ICD_TOR_SIGNALS_STATUS_STATE_STOPPED;
 	} else {
 		if (priv->state.tor_bootstrapped) {
-			state = ICD_TOR_SIGNALS_STATUS_CONNECTED;
+			state = ICD_TOR_SIGNALS_STATUS_STATE_CONNECTED;
 		} else {
-			state = ICD_TOR_SIGNALS_STATUS_STARTED;
+			state = ICD_TOR_SIGNALS_STATUS_STATE_STARTED;
 		}
 	}
 
-	dbus_message_append_args(reply, DBUS_TYPE_STRING, &state, DBUS_TYPE_INVALID);
+	if (!priv->state.service_provider_mode) {
+		mode = ICD_TOR_SIGNALS_STATUS_MODE_NORMAL;
+	} else {
+		mode = ICD_TOR_SIGNALS_STATUS_MODE_PROVIDER;
+	}
+
+	dbus_message_append_args(reply, DBUS_TYPE_STRING, &state, DBUS_TYPE_STRING, &mode, DBUS_TYPE_INVALID);
 
 	if (icd_dbus_send_system_msg(reply) == FALSE) {
 		ILOG_WARN("icd_dbus_send_system_msg failed");
@@ -88,6 +164,7 @@ DBusHandlerResult getstatus_callback(DBusConnection * connection, DBusMessage * 
 void emit_status_signal(network_tor_state state)
 {
 	const char *status = NULL;
+	const char *mode = NULL;
 	DBusMessage *msg = NULL;
 
 	msg = dbus_message_new_signal(ICD_TOR_DBUS_PATH, ICD_TOR_DBUS_INTERFACE, "StatusChanged");
@@ -98,16 +175,22 @@ void emit_status_signal(network_tor_state state)
 
 	/* TODO: DRY this */
 	if (!state.tor_running) {
-		status = ICD_TOR_SIGNALS_STATUS_STOPPED;
+		status = ICD_TOR_SIGNALS_STATUS_STATE_STOPPED;
 	} else {
 		if (state.tor_bootstrapped) {
-			status = ICD_TOR_SIGNALS_STATUS_CONNECTED;
+			status = ICD_TOR_SIGNALS_STATUS_STATE_CONNECTED;
 		} else {
-			status = ICD_TOR_SIGNALS_STATUS_STARTED;
+			status = ICD_TOR_SIGNALS_STATUS_STATE_STARTED;
 		}
 	}
 
-	dbus_message_append_args(msg, DBUS_TYPE_STRING, &status, DBUS_TYPE_INVALID);
+	if (!state.service_provider_mode) {
+		mode = ICD_TOR_SIGNALS_STATUS_MODE_NORMAL;
+	} else {
+		mode = ICD_TOR_SIGNALS_STATUS_MODE_PROVIDER;
+	}
+
+	dbus_message_append_args(msg, DBUS_TYPE_STRING, &status, DBUS_TYPE_STRING, &mode, DBUS_TYPE_INVALID);
 
 	icd_dbus_send_system_msg(msg);
 

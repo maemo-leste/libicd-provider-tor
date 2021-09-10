@@ -34,8 +34,8 @@ static DBusHandlerResult error_callback(DBusConnection * connection,
 					DBusMessage * message, void *user_data);
 
 static struct tor_method_callbacks callbacks[] = {
-	{"Start", &error_callback},
-	{"Stop", &error_callback},
+	{"Start", &start_callback},
+	{"Stop", &stop_callback},
 	{"GetStatus", &getstatus_callback},
 	{"GetActiveConfig", &error_callback},
 	/*

@@ -21,8 +21,8 @@
 
 #include "libicd_network_tor.h"
 
-static void tor_state_change(network_tor_private * private,
-			     tor_network_data * network_data, network_tor_state new_state, int source)
+void tor_state_change(network_tor_private * private,
+		      tor_network_data * network_data, network_tor_state new_state, int source)
 {
 	network_tor_state current_state = private->state;
 
@@ -38,35 +38,42 @@ static void tor_state_change(network_tor_private * private,
 		/* Add network to network_data */
 		private->network_data_list = g_slist_prepend(private->network_data_list, network_data);
 
-		/* Check if we want to start Tor (system wide enabled), or if we just
-		 * call the callback right now */
-		if (current_state.system_wide_enabled) {
-			int start_ret = 0;
-
-			start_ret = startup_tor(network_data, new_state.active_config);
-
-			if (start_ret != 0) {
-				icd_nw_ip_up_cb_fn up_cb = network_data->ip_up_cb;
-				gpointer up_token = network_data->ip_up_cb_token;
-
-				if (start_ret == 1) {
-					network_free_all(network_data);
-				} else if (start_ret == 2) {
-					network_stop_all(network_data);
-					network_free_all(network_data);
-				}
-
-				new_state.iap_connected = FALSE;
-				up_cb(ICD_NW_ERROR, NULL, up_token);
-			} else {
-				new_state.tor_running = TRUE;
-				new_state.tor_bootstrapped_running = TRUE;
-				new_state.tor_bootstrapped = FALSE;
-				/* ip_up_cb will be called later in the bootstrap pid exit */
-			}
-		} else {
-			/* System wide is disabled, so let's just call ip_up_cb right away */
+		if (new_state.service_provider_mode) {
+			/* Return right away, wait for dbus calls */
 			network_data->ip_up_cb(ICD_NW_SUCCESS, NULL, network_data->ip_up_cb_token, NULL);
+
+		} else {
+
+			/* Check if we want to start Tor (system wide enabled), or if we just
+			 * call the callback right now */
+			if (current_state.system_wide_enabled) {
+				int start_ret = 0;
+
+				start_ret = startup_tor(network_data, new_state.active_config);
+
+				if (start_ret != 0) {
+					icd_nw_ip_up_cb_fn up_cb = network_data->ip_up_cb;
+					gpointer up_token = network_data->ip_up_cb_token;
+
+					if (start_ret == 1) {
+						network_free_all(network_data);
+					} else if (start_ret == 2) {
+						network_stop_all(network_data);
+						network_free_all(network_data);
+					}
+
+					new_state.iap_connected = FALSE;
+					up_cb(ICD_NW_ERROR, NULL, up_token);
+				} else {
+					new_state.tor_running = TRUE;
+					new_state.tor_bootstrapped_running = TRUE;
+					new_state.tor_bootstrapped = FALSE;
+					/* ip_up_cb will be called later in the bootstrap pid exit */
+				}
+			} else {
+				/* System wide is disabled, so let's just call ip_up_cb right away */
+				network_data->ip_up_cb(ICD_NW_SUCCESS, NULL, network_data->ip_up_cb_token, NULL);
+			}
 		}
 
 		emit_status_signal(new_state);
@@ -82,15 +89,16 @@ static void tor_state_change(network_tor_private * private,
 		new_state.tor_bootstrapped_running = FALSE;
 		new_state.tor_bootstrapped = FALSE;
 
+		new_state.service_provider_mode = FALSE;
+
 		down_cb(ICD_NW_SUCCESS, down_token);
 
 		emit_status_signal(new_state);
 	} else if (source == EVENT_SOURCE_GCONF_CHANGE) {
 		ILOG_INFO("Tor system_wide status changed via gconf");
-		/* XXX: we could ignore these entirely if we are in service_provider
-		 * mode, or something like that */
 
-		if (current_state.iap_connected) {
+		/* We don't act on this in service provider mode */
+		if (!current_state.service_provider_mode && current_state.iap_connected) {
 			tor_network_data *network_data = icd_tor_find_first_network_data(private);
 
 			if (network_data == NULL) {
@@ -107,7 +115,10 @@ static void tor_state_change(network_tor_private * private,
 					if (start_ret == 1) {
 						ILOG_ERR("Could not start Tor triggered through gconf change");
 						/* TODO: take down the interface here? */
-					} else {
+					} else if (start_ret == 2) {
+						/* TODO: Do we kill tor pids here? */
+
+					} else if (start_ret == 0) {
 						new_state.tor_running = TRUE;
 						new_state.tor_bootstrapped_running = TRUE;
 						new_state.tor_bootstrapped = FALSE;
@@ -116,15 +127,61 @@ static void tor_state_change(network_tor_private * private,
 					new_state.gconf_transition_ongoing = TRUE;
 					network_stop_all(network_data);
 				}
+
+				emit_status_signal(new_state);
 			}
 		}
+	} else if (source == EVENT_SOURCE_DBUS_CALL_START) {
+		if (!current_state.service_provider_mode) {
+			ILOG_ERR("Got EVENT_SOURCE_DBUS_CALL_START while not in provider mode");
+			goto done;
+		}
+
+		tor_network_data *network_data = icd_tor_find_first_network_data(private);
+		if (network_data == NULL) {
+			ILOG_ERR("service_provider_module is TRUE, but we have no network_data");
+			goto done;
+		}
+
+		int start_ret = 0;
+		start_ret = startup_tor(network_data, new_state.active_config);
+
+		if (start_ret != 0) {
+			new_state.dbus_failed_to_start = TRUE;
+			goto done;
+		}
+
+		new_state.tor_running = TRUE;
+		new_state.tor_bootstrapped_running = TRUE;
+		new_state.tor_bootstrapped = FALSE;
+
+		emit_status_signal(new_state);
+	} else if (source == EVENT_SOURCE_DBUS_CALL_STOP) {
+		if (!current_state.service_provider_mode) {
+			ILOG_ERR("Got EVENT_SOURCE_DBUS_CALL_STOP while not in provider mode");
+			goto done;
+		}
+
+		tor_network_data *network_data = icd_tor_find_first_network_data(private);
+		if (network_data == NULL) {
+			ILOG_ERR("service_provider_module is TRUE, but we have no network_data");
+			goto done;
+		}
+
+		network_stop_all(network_data);
 	} else if (source == EVENT_SOURCE_TOR_PID_EXIT) {
+		/* In service provider mode, I suppose this is fatal, but we can just
+		 * emit the signal and have the service provider bring down the network */
+
 		if (!current_state.tor_running) {
 			ILOG_ERR("Received tor pid exit but we don't think it was running");
 			/* Figure out how to handle this */
 		} else {
 			network_data->tor_pid = 0;
-			if (current_state.gconf_transition_ongoing) {
+
+			if (current_state.service_provider_mode) {
+				/* Nothing more to do, service provider will pick it up */
+			} else if (current_state.gconf_transition_ongoing) {
 				new_state.gconf_transition_ongoing = FALSE;
 			} else {
 				/* This will call tor_disconnect, so we don't free/stop here, since
@@ -144,13 +201,19 @@ static void tor_state_change(network_tor_private * private,
 		if (new_state.tor_bootstrapped) {
 			new_state.iap_connected = TRUE;
 
-			if (current_state.gconf_transition_ongoing) {
+			if (current_state.service_provider_mode) {
+				/* Nothing more to do here */
+			} else if (current_state.gconf_transition_ongoing) {
 				new_state.gconf_transition_ongoing = FALSE;
 			} else {
 				network_data->ip_up_cb(ICD_NW_SUCCESS, NULL, network_data->ip_up_cb_token, NULL);
 			}
 		} else {
-			if (current_state.gconf_transition_ongoing) {
+			if (current_state.service_provider_mode) {
+				/* We should probably signal service_provider that we could
+				 * not connect to Tor somehow, although the Stopped signal
+				 * should tell it enough? */
+			} else if (current_state.gconf_transition_ongoing) {
 				new_state.gconf_transition_ongoing = FALSE;
 			} else {
 				icd_nw_ip_up_cb_fn up_cb = network_data->ip_up_cb;
@@ -167,6 +230,8 @@ static void tor_state_change(network_tor_private * private,
 		emit_status_signal(new_state);
 	}
 
+ done:
+	/* TODO: always call emit_status_signal(new_state); here? */
 	/* Free old active_config if it is not the same pointer as in new_state */
 	if (current_state.active_config != NULL && current_state.active_config != new_state.active_config) {
 		free(current_state.active_config);
@@ -207,7 +272,14 @@ static void tor_ip_up(const gchar * network_type,
 	network_tor_state new_state;
 	memcpy(&new_state, &priv->state, sizeof(network_tor_state));
 	new_state.iap_connected = TRUE;
-	new_state.active_config = get_active_config();
+
+	if (network_is_tor_provider(network_id, NULL)) {
+		new_state.service_provider_mode = TRUE;
+		new_state.active_config = NULL;
+	} else {
+		new_state.service_provider_mode = FALSE;
+		new_state.active_config = get_active_config();
+	}
 
 	tor_state_change(priv, network_data, new_state, EVENT_SOURCE_IP_UP);
 
@@ -246,6 +318,7 @@ tor_ip_down(const gchar * network_type, guint network_attrs,
 	network_tor_state new_state;
 	memcpy(&new_state, &priv->state, sizeof(network_tor_state));
 	new_state.iap_connected = FALSE;
+	new_state.service_provider_mode = FALSE;
 
 	tor_state_change(priv, network_data, new_state, EVENT_SOURCE_IP_DOWN);
 }
@@ -322,6 +395,7 @@ static void tor_child_exit(const pid_t pid, const gint exit_status, gpointer * p
 		network_tor_state new_state;
 		memcpy(&new_state, &priv->state, sizeof(network_tor_state));
 		new_state.tor_running = FALSE;
+		new_state.tor_bootstrapped = FALSE;
 
 		tor_state_change(priv, network_data, new_state, EVENT_SOURCE_TOR_PID_EXIT);
 	} else if (pid_type == WAIT_FOR_TOR_PID) {
@@ -378,10 +452,13 @@ gboolean icd_nw_init(struct icd_nw_api *network_api,
 	priv->state.system_wide_enabled = get_system_wide_enabled();
 	priv->state.active_config = NULL;
 	priv->state.iap_connected = FALSE;
+	priv->state.service_provider_mode = FALSE;
+
 	priv->state.tor_running = FALSE;
 	priv->state.tor_bootstrapped_running = FALSE;
 	priv->state.tor_bootstrapped = FALSE;
 	priv->state.gconf_transition_ongoing = FALSE;
+	priv->state.dbus_failed_to_start = FALSE;
 
 	priv->gconf_client = gconf_client_get_default();
 	GError *error = NULL;

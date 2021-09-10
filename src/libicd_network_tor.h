@@ -41,12 +41,15 @@ struct _network_tor_state {
 	gboolean system_wide_enabled;
 	gchar *active_config;
 	gboolean iap_connected;
+	gboolean service_provider_mode;
 
 	gboolean tor_running;
 	gboolean tor_bootstrapped_running;
 	gboolean tor_bootstrapped;
 
 	gboolean gconf_transition_ongoing;
+
+	gboolean dbus_failed_to_start;
 #if 0
 	gboolean network_is_tor_service_provider;
 #endif
@@ -106,6 +109,9 @@ gboolean icd_nw_init(struct icd_nw_api *network_api,
 		     icd_nw_watch_pid_fn watch_fn, gpointer watch_fn_token,
 		     icd_nw_close_fn close_fn, icd_nw_status_change_fn status_change_fn, icd_nw_renew_fn renew_fn);
 
+void tor_state_change(network_tor_private * private, tor_network_data * network_data, network_tor_state new_state,
+		      int source);
+
 /* Helpers */
 void network_stop_all(tor_network_data * network_data);
 void network_free_all(tor_network_data * network_data);
@@ -117,15 +123,19 @@ tor_network_data *icd_tor_find_network_data(const gchar * network_type,
 gboolean string_equal(const char *a, const char *b);
 int startup_tor(tor_network_data * network_data, char *config);
 
-#define EVENT_SOURCE_IP_UP 1
-#define EVENT_SOURCE_IP_DOWN 2
-#define EVENT_SOURCE_GCONF_CHANGE 3
-#define EVENT_SOURCE_TOR_PID_EXIT 4
-#define EVENT_SOURCE_TOR_BOOTSTRAPPED_PID_EXIT 5
-/* TODO: extend with EVENT_SOURCE_DBUS_XYZ */
+enum icd_tor_event_source_type {
+	EVENT_SOURCE_IP_UP,
+	EVENT_SOURCE_IP_DOWN,
+	EVENT_SOURCE_GCONF_CHANGE,
+	EVENT_SOURCE_TOR_PID_EXIT,
+	EVENT_SOURCE_TOR_BOOTSTRAPPED_PID_EXIT,
+	EVENT_SOURCE_DBUS_CALL_START,
+	EVENT_SOURCE_DBUS_CALL_STOP,
+};
 
 /* DBus methods */
 DBusHandlerResult start_callback(DBusConnection * connection, DBusMessage * message, void *user_data);
+DBusHandlerResult stop_callback(DBusConnection * connection, DBusMessage * message, void *user_data);
 DBusHandlerResult getstatus_callback(DBusConnection * connection, DBusMessage * message, void *user_data);
 void emit_status_signal(network_tor_state state);
 
