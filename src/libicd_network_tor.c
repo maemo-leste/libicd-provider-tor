@@ -349,7 +349,6 @@ static void gconf_callback(GConfClient * client, guint cnxn_id, GConfEntry * ent
 {
 	network_tor_private *priv = user_data;
 	gboolean system_wide_enabled = gconf_value_get_bool(entry->value);
-	fprintf(stderr, "gconf_callback: system_wide = %d\n", system_wide_enabled);
 
 	network_tor_state new_state;
 	memcpy(&new_state, &priv->state, sizeof(network_tor_state));
