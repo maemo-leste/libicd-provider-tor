@@ -111,7 +111,6 @@ static tor_network_data *icd_tor_find_first_network_data(provider_tor_private * 
 	return NULL;
 }
 
-/* TODO: maybe also check for service_type, service_id, service_attrs */
 static tor_network_data *icd_tor_find_network_data(const gchar * network_type, guint network_attrs,
 						   const gchar * network_id, provider_tor_private * private)
 {
@@ -355,7 +354,6 @@ static void tor_disconnect(const gchar * service_type,
 	tor_network_data *network_data = icd_tor_find_network_data(network_type, network_attrs, network_id, priv);
 
 	if (network_data) {
-		/* TODO: issue stop call */
 		network_stop_all(network_data);
 		network_free_all(network_data);
 	}
@@ -435,10 +433,12 @@ static void tor_srv_destruct(gpointer * private)
 
 	TP_DEBUG("tor_srv_destruct: priv %p\n", priv);
 
-	// TODO: Free network_data, kill pids and such
-	//g_free(priv);
-	//private = NULL;
+	tor_network_data *data = NULL;
+	while (data = icd_tor_find_first_network_data(priv), data != NULL) {
+		network_free_all(data);
+	}
 
+	g_free(priv);
 	return;
 }
 
@@ -458,26 +458,21 @@ gboolean icd_srv_init(struct icd_srv_api * srv_api,
 		      gpointer watch_cb_token, icd_srv_close_fn close, icd_srv_limited_conn_fn limited_conn)
 {
 	provider_tor_private *priv = g_new0(provider_tor_private, 1);
-
 	TP_DEBUG("icd_srv_init\n");
-
 	srv_api->version = ICD_SRV_MODULE_VERSION;
 	srv_api->private = priv;
 	srv_api->connect = tor_connect;
 	srv_api->disconnect = tor_disconnect;
 	srv_api->identify = tor_identify;
 	srv_api->srv_destruct = tor_srv_destruct;
-
 	priv->watch_cb = watch_cb;
 	priv->watch_cb_token = watch_cb_token;
-
 	priv->close_fn = close;
 	priv->limited_conn_fn = limited_conn;
 
 	if (!icd_dbus_connect_system_bcast_signal
 	    (ICD_TOR_DBUS_INTERFACE, tor_provider_statuschanged_sig, priv, ICD_TOR_SIGNAL_STATUSCHANGED_FILTER)) {
 		TP_ERR("Unable to listen to icd2 tor signals");
-
 		g_free(priv);
 		return FALSE;
 	}
