@@ -1,4 +1,4 @@
-Source: libicd-provider-tor
+Source: libicd-tor
 Priority: optional
 Maintainer: Merlijn Wajer <merlijn@wizzup.org>
 Build-Depends: debhelper (>> 10), autotools-dev,
