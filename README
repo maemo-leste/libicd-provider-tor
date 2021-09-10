@@ -2,3 +2,34 @@ This repository contains the ICD2 Tor plugins. libicd-network-tor is the main
 plugin that allows for enabling Tor for any connection at runtime,
 libicd-provider-tor is the provider that can be enabled per-IAP using the ICD2
 provider API.
+
+
+DBUS API
+========
+
+
+Method calls
+------------
+
+These only work in provider mode.
+
+dbus-send --print-reply     --system     --dest=org.maemo.Tor     /org/maemo/Tor     org.maemo.Tor.Start string:Default
+
+dbus-send --print-reply     --system     --dest=org.maemo.Tor     /org/maemo/Tor     org.maemo.Tor.Stop
+
+dbus-send --print-reply     --system     --dest=org.maemo.Tor     /org/maemo/Tor     org.maemo.Tor.GetStatus
+
+
+Signals
+-------
+
+StatusChanged:
+
+signal time=1631283532.578867 sender=:1.609 -> destination=(null destination) serial=166 path=/org/maemo/Tor; interface=org.maemo.Tor; member=StatusChanged
+   string "Stopped"
+
+signal time=1631283534.470948 sender=:1.609 -> destination=(null destination) serial=167 path=/org/maemo/Tor; interface=org.maemo.Tor; member=StatusChanged
+   string "Started"
+
+signal time=1631283536.221384 sender=:1.609 -> destination=(null destination) serial=169 path=/org/maemo/Tor; interface=org.maemo.Tor; member=StatusChanged
+   string "Connected"
