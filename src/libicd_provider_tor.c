@@ -31,158 +31,235 @@
 
 #include <osso-ic-gconf.h>
 #include <support/icd_log.h>
+#include <support/icd_dbus.h>
+
 #include <srv_provider_api.h>
 
 #include "libicd_tor.h"
 
+#define TP_DEBUG(fmt, ...) ILOG_DEBUG(("[TOR PROVIDER] "fmt), ##__VA_ARGS__)
+#define TP_INFO(fmt, ...) ILOG_INFO(("[TOR PROVIDER] " fmt), ##__VA_ARGS__)
+#define TP_WARN(fmt, ...) ILOG_WARN(("[TOR PROVIDER] %s.%d:" fmt), __func__, __LINE__, ##__VA_ARGS__)
+#define TP_ERR(fmt, ...) ILOG_ERR(("[TOR PROVIDER] %s.%d:" fmt), __func__, __LINE__, ##__VA_ARGS__)
+#define TP_CRIT(fmt, ...) ILOG_CRIT(("[TOR PROVIDER] %s.%d:" fmt), __func__, __LINE__, ##__VA_ARGS__)
+
 struct _provider_tor_private {
-    /* For pid monitoring */
-    icd_srv_watch_pid_fn watch_cb;
-    gpointer watch_cb_token;
+	/* For pid monitoring */
+	icd_srv_watch_pid_fn watch_cb;
+	gpointer watch_cb_token;
 
-    icd_srv_close_fn close_fn;
-    icd_srv_limited_conn_fn limited_conn_fn;
+	icd_srv_close_fn close_fn;
+	icd_srv_limited_conn_fn limited_conn_fn;
 
-    GSList *network_data_list;
+	GSList *network_data_list;
 };
 typedef struct _provider_tor_private provider_tor_private;
 
+#define PROVIDER_TOR_STATE_NONE 0
+#define PROVIDER_TOR_STATE_STOPPED 1
+#define PROVIDER_TOR_STATE_STARTED 2
+#define PROVIDER_TOR_STATE_CONNECTED 3
+
 struct _tor_network_data {
-    provider_tor_private* private;
+	provider_tor_private *private;
 
-    icd_srv_connect_cb_fn connect_cb;
-    gpointer connect_cb_token;
+	int state;
 
-    /* Tor pid */
-    pid_t tor_pid;
+	icd_srv_connect_cb_fn connect_cb;
+	gpointer connect_cb_token;
 
-    /* Tor command auth pw/token */
-    char* tor_stem_auth;
-
-    /* "Wait for Tor" stem script */
-    pid_t wait_for_tor_pid;
-
-    /* For matching / callbacks later on (like close and limited_conn callback) */
-    gchar* service_type;
-    guint service_attrs;
-    gchar *service_id;
-    gchar *network_type;
-    guint network_attrs;
-    gchar *network_id;
+	/* For matching / callbacks later on (like close and limited_conn callback) */
+	gchar *service_type;
+	guint service_attrs;
+	gchar *service_id;
+	gchar *network_type;
+	guint network_attrs;
+	gchar *network_id;
 };
 typedef struct _tor_network_data tor_network_data;
 
 gboolean icd_srv_init(struct icd_srv_api *srv_api,
 		      icd_srv_watch_pid_fn watch_cb,
-		      gpointer watch_cb_token,
-		      icd_srv_close_fn close,
-		      icd_srv_limited_conn_fn limited_conn);
-
+		      gpointer watch_cb_token, icd_srv_close_fn close, icd_srv_limited_conn_fn limited_conn);
 
 /* XXX: Taken from ipv4 module */
-static gboolean
-string_equal(const char *a, const char *b)
+static gboolean string_equal(const char *a, const char *b)
 {
-  if (!a)
-    return !b;
+	if (!a)
+		return !b;
 
-  if (b)
-    return !strcmp(a, b);
+	if (b)
+		return !strcmp(a, b);
 
-  return FALSE;
+	return FALSE;
+}
+
+static tor_network_data *icd_tor_find_first_network_data(provider_tor_private * private)
+{
+	GSList *l;
+
+	for (l = private->network_data_list; l; l = l->next) {
+		tor_network_data *found = (tor_network_data *) l->data;
+
+		if (!found)
+			TP_WARN("tor network data is NULL");
+		else {
+			return found;
+		}
+	}
+
+	return NULL;
 }
 
 /* TODO: maybe also check for service_type, service_id, service_attrs */
-static tor_network_data *
-icd_tor_find_network_data(const gchar *network_type, guint network_attrs,
-                           const gchar *network_id, provider_tor_private *private)
+static tor_network_data *icd_tor_find_network_data(const gchar * network_type, guint network_attrs,
+						   const gchar * network_id, provider_tor_private * private)
 {
-  GSList *l;
+	GSList *l;
 
-  for (l = private->network_data_list; l; l = l->next)
-  {
-    tor_network_data *found = (tor_network_data *)l->data;
+	for (l = private->network_data_list; l; l = l->next) {
+		tor_network_data *found = (tor_network_data *) l->data;
 
-    if (!found)
-      ILOG_WARN("tor network data is NULL");
-    else
-    {
-      if (found->network_attrs == network_attrs &&
-          string_equal(found->network_type, network_type) &&
-          string_equal(found->network_id, network_id))
-      {
-        return found;
-      }
-    }
-  }
+		if (!found)
+			TP_WARN("tor network data is NULL");
+		else {
+			if (found->network_attrs == network_attrs &&
+			    string_equal(found->network_type, network_type) &&
+			    string_equal(found->network_id, network_id)) {
+				return found;
+			}
+		}
+	}
 
-  return NULL;
+	return NULL;
 }
 
-/* pathname and arg are like in execv, returns pid, 0 is error */
-static pid_t spawn_as(const char* username,
-                    const char* pathname, char* args[]) {
-    struct passwd * ent = getpwnam(username);
-    if (ent == NULL) {
-        ILOG_CRIT("spawn_tor: getpwnam failed\n");
-        return 0;
-    }
-
-    pid_t pid = fork();
-    if (pid < 0) {
-        ILOG_CRIT("spawn_tor: fork() failed\n");
-        return 0;
-    } else if (pid == 0) {
-        if (setgid(ent->pw_gid)) {
-            ILOG_CRIT("setgid failed\n");
-            exit(1);
-        }
-        if (setuid(ent->pw_uid)) {
-            ILOG_CRIT("setuid failed\n");
-            exit(1);
-        }
-        execv(pathname, args);
-
-        ILOG_CRIT("execv failed\n");
-        exit(1);
-    } else {
-        ILOG_DEBUG("spawn_as got pid: %d\n", pid);
-        return pid;
-    }
-
-    return 0; // Failure
+static void tor_get_stop_reply(DBusPendingCall * pending, gpointer user_data)
+{
+	/* We don't care */
+	return;
 }
 
+static void network_free_all(tor_network_data * network_data)
+{
+	provider_tor_private *priv = network_data->private;
+	if (priv->network_data_list) {
+		priv->network_data_list = g_slist_remove(priv->network_data_list, network_data);
+	}
 
-static void network_free_all(tor_network_data* network_data) {
-    provider_tor_private* priv = network_data->private;
-    if (priv->network_data_list) {
-        priv->network_data_list = g_slist_remove(priv->network_data_list,
-                                                 network_data);
-    }
+	g_free(network_data->service_type);
+	g_free(network_data->service_id);
+	g_free(network_data->network_type);
+	g_free(network_data->network_id);
 
-    g_free(network_data->service_type);
-    g_free(network_data->service_id);
-    g_free(network_data->network_type);
-    g_free(network_data->network_id);
+	network_data->private = NULL;
 
-    network_data->private = NULL;
-
-    g_free(network_data);
+	g_free(network_data);
 }
 
+static void network_stop_all(tor_network_data * network_data)
+{
+	DBusMessage *msg;
+	msg = dbus_message_new_method_call(ICD_TOR_DBUS_INTERFACE, ICD_TOR_DBUS_PATH, ICD_TOR_DBUS_INTERFACE, "Stop");
 
-static void network_stop_all(tor_network_data* network_data) {
-    if (network_data->tor_pid != 0) {
-        kill(network_data->tor_pid, SIGTERM);
-        network_data->tor_pid = 0;
-    }
-    if (network_data->wait_for_tor_pid != 0) {
-        kill(network_data->wait_for_tor_pid, SIGTERM);
-        network_data->wait_for_tor_pid = 0;
-    }
+	if (icd_dbus_send_system_mcall(msg, -1, tor_get_stop_reply, network_data) == FALSE) {
+		/* Call down callback right away */
+		TP_WARN("icd_dbus_send_system_msg failed when requesting Stop");
+		dbus_message_unref(msg);
+
+		return;
+	}
+
+	dbus_message_unref(msg);
 }
 
+static void tor_get_start_reply(DBusPendingCall * pending, gpointer user_data)
+{
+	DBusMessage *message;
+	int reply = 0;
+	tor_network_data *network_data = user_data;
+
+	message = dbus_pending_call_steal_reply(pending);
+
+	if (message && dbus_message_get_type(message) == DBUS_MESSAGE_TYPE_METHOD_RETURN) {
+		dbus_message_get_args(message, NULL, DBUS_TYPE_INT32, &reply, DBUS_TYPE_INVALID);
+	}
+
+	if (reply != TOR_DBUS_METHOD_START_RESULT_OK) {
+		network_data->connect_cb(ICD_SRV_ERROR, NULL, network_data->connect_cb_token);
+		network_free_all(network_data);
+	}
+
+	/* Otherwise, we wait for status changed signal(s) - assuming we don't get
+	 * them before the method reply (yikes) */
+	return;
+}
+
+static DBusHandlerResult
+tor_provider_statuschanged_sig(DBusConnection * connection, DBusMessage * message, void *user_data)
+{
+	provider_tor_private *priv = user_data;
+
+	if (dbus_message_is_signal(message, ICD_TOR_DBUS_INTERFACE, ICD_TOR_SIGNAL_STATUSCHANGED)) {
+		const char *status = NULL;
+		const char *mode = NULL;
+		int new_state = PROVIDER_TOR_STATE_NONE;
+
+		if (!dbus_message_get_args(message, NULL,
+					   DBUS_TYPE_STRING, &status, DBUS_TYPE_STRING, &mode, DBUS_TYPE_INVALID)) {
+			TP_WARN("Unable to parse arguments of " ICD_TOR_SIGNAL_STATUSCHANGED);
+		}
+
+		/* Find network data, check status, potentially call callbacks based on
+		 * state */
+		tor_network_data *network_data = icd_tor_find_first_network_data(priv);
+
+		if (network_data == NULL) {
+			/* We're likely just not active at all */
+			goto done;
+		}
+
+		if (strcmp(status, ICD_TOR_SIGNALS_STATUS_STATE_STOPPED) == 0) {
+			TP_DEBUG("New state: Stopped");
+			new_state = PROVIDER_TOR_STATE_STOPPED;
+		} else if (strcmp(status, ICD_TOR_SIGNALS_STATUS_STATE_STARTED) == 0) {
+			TP_DEBUG("New state: Started");
+			new_state = PROVIDER_TOR_STATE_STARTED;
+		} else if (strcmp(status, ICD_TOR_SIGNALS_STATUS_STATE_CONNECTED) == 0) {
+			TP_DEBUG("New state: Connected");
+			new_state = PROVIDER_TOR_STATE_CONNECTED;
+		}
+
+		/* We could get an unexpected stop, or the expected start (after we
+		 * start it */
+		if (network_data->state > new_state) {
+			/* Tor quit, let's throw down the interface */
+
+			priv->close_fn(ICD_SRV_ERROR, "Tor process quit (unexpectedly)",
+				       network_data->service_type,
+				       network_data->service_attrs,
+				       network_data->service_id,
+				       network_data->network_type,
+				       network_data->network_attrs, network_data->network_id);
+			goto done;
+		}
+
+		if (new_state > network_data->state) {
+			if (new_state == PROVIDER_TOR_STATE_CONNECTED) {
+				network_data->connect_cb(ICD_SRV_SUCCESS, NULL, network_data->connect_cb_token);
+			}
+		}
+
+		if (new_state == network_data->state) {
+			/* Nothing changed. */
+		}
+
+		network_data->state = new_state;
+	}
+
+ done:
+	return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+}
 
 /**
  * Function to connect (or authenticate) to the service provider.
@@ -200,92 +277,51 @@ static void network_stop_all(tor_network_data* network_data) {
  * @param private           reference to the private icd_srv_api member
  */
 static void tor_connect(const gchar * service_type,
-			  const guint service_attrs,
-			  const gchar * service_id,
-			  const gchar * network_type,
-			  const guint network_attrs,
-			  const gchar * network_id,
-			  const gchar * interface_name,
-			  icd_srv_connect_cb_fn connect_cb,
-			  gpointer connect_cb_token, gpointer * private)
+			const guint service_attrs,
+			const gchar * service_id,
+			const gchar * network_type,
+			const guint network_attrs,
+			const gchar * network_id,
+			const gchar * interface_name,
+			icd_srv_connect_cb_fn connect_cb, gpointer connect_cb_token, gpointer * private)
 {
-    provider_tor_private* priv = *private;
-	ILOG_DEBUG("tor_connect: %s\n", network_id);
+	provider_tor_private *priv = *private;
+	TP_DEBUG("tor_connect: %s\n", network_id);
 
-    tor_network_data* network_data = g_new0(tor_network_data, 1);
+	tor_network_data *network_data = g_new0(tor_network_data, 1);
 
-    network_data->service_type = g_strdup(service_type);
-    network_data->service_id = g_strdup(service_id);
-    network_data->service_attrs = service_attrs;
-    network_data->network_type = g_strdup(network_type);
-    network_data->network_attrs = network_attrs;
-    network_data->network_id = g_strdup(network_id);
+	network_data->service_type = g_strdup(service_type);
+	network_data->service_id = g_strdup(service_id);
+	network_data->service_attrs = service_attrs;
+	network_data->network_type = g_strdup(network_type);
+	network_data->network_attrs = network_attrs;
+	network_data->network_id = g_strdup(network_id);
 
-    network_data->connect_cb = connect_cb;
-    network_data->connect_cb_token = connect_cb_token;
-    network_data->private = priv;
+	network_data->connect_cb = connect_cb;
+	network_data->connect_cb_token = connect_cb_token;
+	network_data->private = priv;
 
-    /* Add it once we have both pids */
-    priv->network_data_list = g_slist_prepend(priv->network_data_list, network_data);
+	network_data->state = PROVIDER_TOR_STATE_STOPPED;
 
-    char config_filename[256];
-    if (snprintf(config_filename, 256, "/etc/tor/torrc-provider-%s", service_id) >= 256) {
-        ILOG_WARN("Unable to allocate torrc config filename\n");
-        connect_cb(ICD_SRV_ERROR, NULL, connect_cb_token);
-        network_stop_all(network_data);
-        network_free_all(network_data);
-        return;
-    }
+	/* Issue dbus call, and upon dbus call result, call the connect_cb */
 
-    char* config_content = generate_config(service_id);
-    GError *error = NULL;
-    g_file_set_contents(config_filename, config_content, strlen(config_content), &error);
-    if (error != NULL) {
-        g_clear_error(&error);
-        ILOG_WARN("Unable to write Tor config file\n");
-        connect_cb(ICD_SRV_ERROR, NULL, connect_cb_token);
-        network_stop_all(network_data);
-        network_free_all(network_data);
-        return;
-    }
+	DBusMessage *msg;
+	msg = dbus_message_new_method_call(ICD_TOR_DBUS_INTERFACE, ICD_TOR_DBUS_PATH, ICD_TOR_DBUS_INTERFACE, "Start");
+	dbus_message_append_args(msg, DBUS_TYPE_STRING, &service_id, DBUS_TYPE_INVALID);
 
-    //char* argss[] = {"/usr/bin/tor", NULL};
-    char* argss[] = {"/usr/bin/tor", "-f", config_filename, NULL};
-    pid_t pid = spawn_as("debian-tor", "/usr/bin/tor", argss);
-    if (pid == 0) {
-        ILOG_WARN("Failed to start Tor\n");
-        connect_cb(ICD_SRV_ERROR, NULL, connect_cb_token);
-        network_stop_all(network_data);
-        return;
-    }
+	if (icd_dbus_send_system_mcall(msg, -1, tor_get_start_reply, network_data) == FALSE) {
+		/* Call down callback right away */
+		TP_WARN("icd_dbus_send_system_msg failed when requesting Start");
+		dbus_message_unref(msg);
 
-    network_data->tor_pid = pid;
-    network_data->private->watch_cb(pid, network_data->private->watch_cb_token);
+		connect_cb(ICD_SRV_ERROR, NULL, connect_cb_token);
 
-	gchar *gc_controlport =
-	    g_strjoin("/", GC_TOR, service_id, GC_CONTROLPORT, NULL);
-	GConfClient* gconf = gconf_client_get_default();
-	gint control_port = gconf_client_get_int(gconf, gc_controlport, NULL);
-	g_object_unref(gconf);
-	g_free(gc_controlport);
-    char cport[64];
-    snprintf(cport, 64, "%d", control_port);
+		return;
+	}
 
-    char* argsv[] = {"/usr/bin/libicd-tor-wait-bootstrapped", cport, NULL};
+	dbus_message_unref(msg);
 
-    pid = spawn_as("debian-tor", "/usr/bin/libicd-tor-wait-bootstrapped", argsv);
-    if (pid == 0) {
-        ILOG_WARN("Failed to start wait for bootstrapping script\n");
-        connect_cb(ICD_SRV_ERROR, NULL, connect_cb_token);
-        network_stop_all(network_data);
-        return;
-    }
-    network_data->wait_for_tor_pid = pid;
-    network_data->private->watch_cb(pid, network_data->private->watch_cb_token);
-
-    /* Add it once we have both pids */
-    priv->network_data_list = g_slist_prepend(priv->network_data_list, network_data);
-
+	priv->network_data_list = g_slist_prepend(priv->network_data_list, network_data);
 	return;
 }
 
@@ -305,24 +341,24 @@ static void tor_connect(const gchar * service_type,
  * @param private              reference to the private icd_srv_api member
  */
 static void tor_disconnect(const gchar * service_type,
-			     const guint service_attrs,
-			     const gchar * service_id,
-			     const gchar * network_type,
-			     const guint network_attrs,
-			     const gchar * network_id,
-			     const gchar * interface_name,
-			     icd_srv_disconnect_cb_fn disconnect_cb,
-			     gpointer disconnect_cb_token, gpointer * private)
+			   const guint service_attrs,
+			   const gchar * service_id,
+			   const gchar * network_type,
+			   const guint network_attrs,
+			   const gchar * network_id,
+			   const gchar * interface_name,
+			   icd_srv_disconnect_cb_fn disconnect_cb, gpointer disconnect_cb_token, gpointer * private)
 {
-	ILOG_DEBUG("tor_disconnect: %s\n", network_id);
-    provider_tor_private* priv = *private;
+	TP_DEBUG("tor_disconnect: %s\n", network_id);
+	provider_tor_private *priv = *private;
 
-    tor_network_data *network_data = icd_tor_find_network_data(network_type, network_attrs, network_id, priv);
+	tor_network_data *network_data = icd_tor_find_network_data(network_type, network_attrs, network_id, priv);
 
-    if (network_data) {
-        network_stop_all(network_data);
-        network_free_all(network_data);
-    }
+	if (network_data) {
+		/* TODO: issue stop call */
+		network_stop_all(network_data);
+		network_free_all(network_data);
+	}
 
 	disconnect_cb(ICD_SRV_SUCCESS, disconnect_cb_token);
 	return;
@@ -344,167 +380,47 @@ static void tor_disconnect(const gchar * service_type,
  * @param identify_cb_token  token to pass to the identification callback
  */
 static void tor_identify(enum icd_scan_status status,
-			   const gchar * network_type,
-			   const gchar * network_name,
-			   const guint network_attrs,
-			   const gchar * network_id,
-			   const guint network_priority,
-			   enum icd_nw_levels signal,
-			   const gchar * station_id,
-			   const gint dB,
-			   icd_srv_identify_cb_fn identify_cb,
-			   gpointer identify_cb_token, gpointer * private)
+			 const gchar * network_type,
+			 const gchar * network_name,
+			 const guint network_attrs,
+			 const gchar * network_id,
+			 const guint network_priority,
+			 enum icd_nw_levels signal,
+			 const gchar * station_id,
+			 const gint dB,
+			 icd_srv_identify_cb_fn identify_cb, gpointer identify_cb_token, gpointer * private)
 {
-	ILOG_DEBUG
-	    ("tor_identify: network_type: %s, network_name: %s, network_id: %s\n",
-	     network_type, network_name, network_id);
+	TP_DEBUG("tor_identify: network_type: %s, network_name: %s, network_id: %s\n", network_type, network_name,
+		 network_id);
 
-	GConfClient *gconf_client;
-	gchar *iap_gconf_key;
-	char *gconf_service_type = NULL;
 	char *gconf_service_id = NULL;
-    GSList *providers = NULL, *l = NULL;
-    gboolean service_id_known = FALSE;
+	gboolean match = FALSE;
 
-	gconf_client = gconf_client_get_default();
-
-	iap_gconf_key = g_strdup_printf("/system/osso/connectivity/IAP/%s/service_type", network_id);
-	gconf_service_type = gconf_client_get_string(gconf_client, iap_gconf_key, NULL);
-	g_free(iap_gconf_key);
-
-	iap_gconf_key = g_strdup_printf("/system/osso/connectivity/IAP/%s/service_id", network_id);
-	gconf_service_id = gconf_client_get_string(gconf_client, iap_gconf_key, NULL);
-	g_free(iap_gconf_key);
-
-    providers = gconf_client_get_list(gconf_client, GC_ICD_TOR_AVAILABLE_IDS, GCONF_VALUE_STRING, NULL);
-    for (l = providers; l; l = l->next) {
-        if (gconf_service_id && !strcmp(l->data, gconf_service_id)) {
-            service_id_known = TRUE;
-            break;
-        }
-    }
-    g_slist_free_full(providers, g_free);
-	g_object_unref(gconf_client);
+	match = network_is_tor_provider(network_id, &gconf_service_id);
 
 	/* We construct a name here to make it apparent this is a tor provider */
 	gchar *name = g_strconcat(network_name, " (", TOR_PROVIDER_NAME, ") ", NULL);
-	ILOG_DEBUG("tor_identify: called for: %s\n", name);
+	TP_DEBUG("tor_identify: called for: %s\n", name);
 
-	if (service_id_known && g_strcmp0(TOR_PROVIDER_TYPE, gconf_service_type) == 0) {
-		ILOG_DEBUG("tor_identify: MATCH\n");
-		identify_cb(ICD_SRV_IDENTIFIED,
-                TOR_PROVIDER_TYPE,	/* service type */
+	if (match) {
+		identify_cb(ICD_SRV_IDENTIFIED, TOR_PROVIDER_TYPE,	/* service type */
 			    name,
-                TOR_DEFAULT_SERVICE_ATTRIBUTES,
+			    TOR_DEFAULT_SERVICE_ATTRIBUTES,
 			    gconf_service_id,
-                TOR_DEFAULT_SERVICE_PRIORITY,
-			    network_type,
-			    network_attrs, network_id, identify_cb_token);
+			    TOR_DEFAULT_SERVICE_PRIORITY, network_type, network_attrs, network_id, identify_cb_token);
 
 	} else {
-		ILOG_DEBUG("tor_identify: NO MATCH\n");
-        /* XXX: Do we really need to add provider type and provider id when we
-         * don't match it? */
-		identify_cb(ICD_SRV_UNKNOWN,
-                TOR_PROVIDER_TYPE,	/* service type */
+		/* XXX: Do we really need to add provider type and provider id when we
+		 * don't match it? */
+		identify_cb(ICD_SRV_UNKNOWN, TOR_PROVIDER_TYPE,	/* service type */
 			    name,
-                TOR_DEFAULT_SERVICE_ATTRIBUTES,
+			    TOR_DEFAULT_SERVICE_ATTRIBUTES,
 			    gconf_service_id,
-                TOR_DEFAULT_SERVICE_PRIORITY,
-			    network_type,
-			    network_attrs, network_id, identify_cb_token);
+			    TOR_DEFAULT_SERVICE_PRIORITY, network_type, network_attrs, network_id, identify_cb_token);
 	}
 
-    if (gconf_service_type) {
-        g_free(gconf_service_type);
-    }
-
-    if (gconf_service_id) {
-        g_free(gconf_service_id);
-    }
-
+	g_free(gconf_service_id);
 	g_free(name);
-	return;
-}
-
-/**
- * Function to handle child process termination
- *
- * @param pid         the process id that exited
- * @param exit_value  process exit value
- * @param private     a reference to the icd_nw_api private member
- */
-static void tor_child_exit(const pid_t pid,
-			     const gint exit_status, gpointer * private)
-{
-    GSList *l;
-    provider_tor_private* priv = *private;
-    tor_network_data* network_data;
-
-
-    enum pidtype {UNKNOWN, TOR_PID, WAIT_FOR_TOR_PID};
-
-    int pid_type = UNKNOWN;
-
-    for (l = priv->network_data_list; l; l = l->next)
-    {
-        network_data = (tor_network_data *)l->data;
-        if (network_data)
-        {
-            if (network_data->tor_pid == pid) {
-                pid_type = TOR_PID; 
-                break;
-            }
-            if (network_data->wait_for_tor_pid == pid) {
-                pid_type = WAIT_FOR_TOR_PID; 
-                break;
-            }
-            /* Do we want to do anything with unknown pids? */
-
-        }
-        else {
-            /* This can happen if we are manually disconnecting, and we already
-               free the network data and kill tor, then we won't have the
-               network_data anymore */
-            ILOG_DEBUG("tor_child_exit: network_data_list contains empty network_data");
-        }
-    }
-
-    if (!l) {
-        ILOG_ERR("tor_child_exit: got pid %d but did not find network_data\n", pid);
-        return;
-    }
-
-    if (pid_type == TOR_PID) {
-        /* If we get here, we probably did not kill Tor ourselves, since we
-         * typically remove the network_data right after that, so we will also
-         * (always) issue priv->close_fn here */
-        network_data->tor_pid = 0;
-
-        ILOG_DEBUG("tor_child_exit for pid: %d\n", pid);
-        ILOG_INFO("Tor process stopped");
-
-        /* This will call tor_disconnect, so we don't free/stop here */
-        priv->close_fn(ICD_SRV_ERROR, "Tor process quit (unexpectedly)",
-                network_data->service_type,
-                network_data->service_attrs,
-                network_data->service_id,
-                network_data->network_type,
-                network_data->network_attrs,
-                network_data->network_id);
-    } else if (pid_type == WAIT_FOR_TOR_PID) {
-        network_data->wait_for_tor_pid = 0;
-        ILOG_INFO("Got wait-for-tor pid: %d with status %d", pid, exit_status);
-
-        if (exit_status == 0) {
-            network_data->connect_cb(ICD_SRV_SUCCESS, NULL, network_data->connect_cb_token);
-        } else {
-            ILOG_WARN("wait-for-tor failed with %d\n", exit_status);
-            network_data->connect_cb(ICD_SRV_ERROR, NULL, network_data->connect_cb_token);
-            /* This will make icd2 issue disconnect, so we don't free/stop here */
-        }
-    }
-
 	return;
 }
 
@@ -515,13 +431,13 @@ static void tor_child_exit(const pid_t pid,
  */
 static void tor_srv_destruct(gpointer * private)
 {
-    provider_tor_private *priv = *private;
+	provider_tor_private *priv = *private;
 
-	ILOG_DEBUG("tor_srv_destruct: priv %p\n", priv);
+	TP_DEBUG("tor_srv_destruct: priv %p\n", priv);
 
-    // TODO: Free network_data, kill pids and such
-    //g_free(priv);
-    //private = NULL;
+	// TODO: Free network_data, kill pids and such
+	//g_free(priv);
+	//private = NULL;
 
 	return;
 }
@@ -539,27 +455,32 @@ static void tor_srv_destruct(gpointer * private)
  */
 gboolean icd_srv_init(struct icd_srv_api * srv_api,
 		      icd_srv_watch_pid_fn watch_cb,
-		      gpointer watch_cb_token,
-		      icd_srv_close_fn close,
-		      icd_srv_limited_conn_fn limited_conn)
+		      gpointer watch_cb_token, icd_srv_close_fn close, icd_srv_limited_conn_fn limited_conn)
 {
-    provider_tor_private *priv = g_new0(provider_tor_private, 1);
+	provider_tor_private *priv = g_new0(provider_tor_private, 1);
 
-	ILOG_DEBUG("icd_srv_init\n");
+	TP_DEBUG("icd_srv_init\n");
 
 	srv_api->version = ICD_SRV_MODULE_VERSION;
 	srv_api->private = priv;
 	srv_api->connect = tor_connect;
 	srv_api->disconnect = tor_disconnect;
 	srv_api->identify = tor_identify;
-	srv_api->child_exit = tor_child_exit;
 	srv_api->srv_destruct = tor_srv_destruct;
 
-    priv->watch_cb = watch_cb;
-    priv->watch_cb_token = watch_cb_token;
+	priv->watch_cb = watch_cb;
+	priv->watch_cb_token = watch_cb_token;
 
-    priv->close_fn = close;
-    priv->limited_conn_fn = limited_conn;
+	priv->close_fn = close;
+	priv->limited_conn_fn = limited_conn;
+
+	if (!icd_dbus_connect_system_bcast_signal
+	    (ICD_TOR_DBUS_INTERFACE, tor_provider_statuschanged_sig, priv, ICD_TOR_SIGNAL_STATUSCHANGED_FILTER)) {
+		TP_ERR("Unable to listen to icd2 tor signals");
+
+		g_free(priv);
+		return FALSE;
+	}
 
 	return TRUE;
 }
