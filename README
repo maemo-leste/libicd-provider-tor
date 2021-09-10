@@ -1,0 +1,4 @@
+This repository contains the ICD2 Tor plugins. libicd-network-tor is the main
+plugin that allows for enabling Tor for any connection at runtime,
+libicd-provider-tor is the provider that can be enabled per-IAP using the ICD2
+provider API.
