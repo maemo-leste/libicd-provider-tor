@@ -433,6 +433,9 @@ static void tor_srv_destruct(gpointer * private)
 
 	TP_DEBUG("tor_srv_destruct: priv %p\n", priv);
 
+	icd_dbus_disconnect_system_bcast_signal(ICD_TOR_DBUS_INTERFACE, tor_provider_statuschanged_sig, priv,
+						ICD_TOR_SIGNAL_STATUSCHANGED_FILTER);
+
 	tor_network_data *data = NULL;
 	while (data = icd_tor_find_first_network_data(priv), data != NULL) {
 		network_free_all(data);
