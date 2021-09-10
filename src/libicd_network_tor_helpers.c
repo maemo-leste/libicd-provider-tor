@@ -52,8 +52,7 @@ tor_network_data *icd_tor_find_first_network_data(network_tor_private * private)
 
 tor_network_data *icd_tor_find_network_data(const gchar * network_type,
 					    guint network_attrs,
-					    const gchar * network_id,
-					    network_tor_private * private)
+					    const gchar * network_id, network_tor_private * private)
 {
 	GSList *l;
 
@@ -112,8 +111,7 @@ void network_free_all(tor_network_data * network_data)
 {
 	network_tor_private *priv = network_data->private;
 	if (priv->network_data_list) {
-		priv->network_data_list =
-		    g_slist_remove(priv->network_data_list, network_data);
+		priv->network_data_list = g_slist_remove(priv->network_data_list, network_data);
 	}
 
 	g_free(network_data->network_type);
@@ -138,17 +136,15 @@ int startup_tor(tor_network_data * network_data, char *config)
 {
 
 	char config_filename[256];
-	if (snprintf
-	    (config_filename, 256, "/etc/tor/torrc-network-%s",
-	     config) >= 256) {
+	if (snprintf(config_filename, 256, "/etc/tor/torrc-network-%s", config)
+	    >= 256) {
 		ILOG_WARN("Unable to allocate torrc config filename\n");
 		return 1;
 	}
 
 	char *config_content = generate_config(config);
 	GError *error = NULL;
-	g_file_set_contents(config_filename, config_content,
-			    strlen(config_content), &error);
+	g_file_set_contents(config_filename, config_content, strlen(config_content), &error);
 	if (error != NULL) {
 		g_clear_error(&error);
 		ILOG_WARN("Unable to write Tor config file\n");
@@ -162,12 +158,11 @@ int startup_tor(tor_network_data * network_data, char *config)
 		return 1;
 	}
 
+	ILOG_INFO("Got tor_pid: %d\n", pid);
 	network_data->tor_pid = pid;
-	network_data->private->watch_cb(pid,
-					network_data->private->watch_cb_token);
+	network_data->private->watch_cb(pid, network_data->private->watch_cb_token);
 
-	gchar *gc_controlport =
-	    g_strjoin("/", GC_TOR, config, GC_CONTROLPORT, NULL);
+	gchar *gc_controlport = g_strjoin("/", GC_TOR, config, GC_CONTROLPORT, NULL);
 	GConfClient *gconf = gconf_client_get_default();
 	gint control_port = gconf_client_get_int(gconf, gc_controlport, NULL);
 	g_object_unref(gconf);
@@ -175,19 +170,15 @@ int startup_tor(tor_network_data * network_data, char *config)
 	char cport[64];
 	snprintf(cport, 64, "%d", control_port);
 
-	char *argsv[] =
-	    { "/usr/bin/libicd-tor-wait-bootstrapped", cport, NULL };
+	char *argsv[] = { "/usr/bin/libicd-tor-wait-bootstrapped", cport, NULL };
 
-	pid =
-	    spawn_as("debian-tor", "/usr/bin/libicd-tor-wait-bootstrapped",
-		     argsv);
+	pid = spawn_as("debian-tor", "/usr/bin/libicd-tor-wait-bootstrapped", argsv);
 	if (pid == 0) {
 		ILOG_WARN("Failed to start wait for bootstrapping script\n");
 		return 2;
 	}
 	network_data->wait_for_tor_pid = pid;
-	network_data->private->watch_cb(pid,
-					network_data->private->watch_cb_token);
+	network_data->private->watch_cb(pid, network_data->private->watch_cb_token);
 
 	return 0;
 }

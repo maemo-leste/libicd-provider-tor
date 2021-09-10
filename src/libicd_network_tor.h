@@ -104,20 +104,16 @@ typedef struct _tor_network_data tor_network_data;
 
 gboolean icd_nw_init(struct icd_nw_api *network_api,
 		     icd_nw_watch_pid_fn watch_fn, gpointer watch_fn_token,
-		     icd_nw_close_fn close_fn,
-		     icd_nw_status_change_fn status_change_fn,
-		     icd_nw_renew_fn renew_fn);
+		     icd_nw_close_fn close_fn, icd_nw_status_change_fn status_change_fn, icd_nw_renew_fn renew_fn);
 
 /* Helpers */
 void network_stop_all(tor_network_data * network_data);
 void network_free_all(tor_network_data * network_data);
 pid_t spawn_as(const char *username, const char *pathname, char *args[]);
-tor_network_data *icd_tor_find_first_network_data(network_tor_private *
-						  private);
+tor_network_data *icd_tor_find_first_network_data(network_tor_private * private);
 tor_network_data *icd_tor_find_network_data(const gchar * network_type,
 					    guint network_attrs,
-					    const gchar * network_id,
-					    network_tor_private * private);
+					    const gchar * network_id, network_tor_private * private);
 gboolean string_equal(const char *a, const char *b);
 int startup_tor(tor_network_data * network_data, char *config);
 
@@ -126,12 +122,11 @@ int startup_tor(tor_network_data * network_data, char *config);
 #define EVENT_SOURCE_GCONF_CHANGE 3
 #define EVENT_SOURCE_TOR_PID_EXIT 4
 #define EVENT_SOURCE_TOR_BOOTSTRAPPED_PID_EXIT 5
-/* TODO: extend with dbus */
+/* TODO: extend with EVENT_SOURCE_DBUS_XYZ */
 
-DBusHandlerResult start_callback(DBusConnection * connection,
-				 DBusMessage * message, void *user_data);
-DBusHandlerResult getstatus_callback(DBusConnection * connection,
-				     DBusMessage * message, void *user_data);
+/* DBus methods */
+DBusHandlerResult start_callback(DBusConnection * connection, DBusMessage * message, void *user_data);
+DBusHandlerResult getstatus_callback(DBusConnection * connection, DBusMessage * message, void *user_data);
 void emit_status_signal(network_tor_state state);
 
 #endif

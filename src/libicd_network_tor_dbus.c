@@ -26,8 +26,7 @@
 #include "libicd_network_tor.h"
 
 #if 0
-DBusHandlerResult start_callback(DBusConnection * connection,
-				 DBusMessage * message, void *user_data)
+DBusHandlerResult start_callback(DBusConnection * connection, DBusMessage * message, void *user_data)
 {
 	DBusMessage *reply = dbus_message_new_method_return(message);
 	if (!reply) {
@@ -35,9 +34,7 @@ DBusHandlerResult start_callback(DBusConnection * connection,
 		return DBUS_HANDLER_RESULT_NEED_MEMORY;
 	}
 	dbus_int32_t success_code = TOR_DBUS_METHOD_START_RESULT_OK;
-	dbus_message_append_args(reply,
-				 DBUS_TYPE_INT32, &success_code,
-				 DBUS_TYPE_INVALID);
+	dbus_message_append_args(reply, DBUS_TYPE_INT32, &success_code, DBUS_TYPE_INVALID);
 
 	if (icd_dbus_send_system_msg(reply) == FALSE) {
 		ILOG_WARN("icd_dbus_send_system_msg failed");
@@ -52,8 +49,7 @@ DBusHandlerResult start_callback(DBusConnection * connection,
 }
 #endif
 
-DBusHandlerResult getstatus_callback(DBusConnection * connection,
-				     DBusMessage * message, void *user_data)
+DBusHandlerResult getstatus_callback(DBusConnection * connection, DBusMessage * message, void *user_data)
 {
 	const char *state = NULL;
 	network_tor_private *priv = user_data;
@@ -75,8 +71,7 @@ DBusHandlerResult getstatus_callback(DBusConnection * connection,
 		}
 	}
 
-	dbus_message_append_args(reply,
-				 DBUS_TYPE_STRING, &state, DBUS_TYPE_INVALID);
+	dbus_message_append_args(reply, DBUS_TYPE_STRING, &state, DBUS_TYPE_INVALID);
 
 	if (icd_dbus_send_system_msg(reply) == FALSE) {
 		ILOG_WARN("icd_dbus_send_system_msg failed");
@@ -95,12 +90,9 @@ void emit_status_signal(network_tor_state state)
 	const char *status = NULL;
 	DBusMessage *msg = NULL;
 
-	msg =
-	    dbus_message_new_signal(ICD_TOR_DBUS_PATH, ICD_TOR_DBUS_INTERFACE,
-				    "StatusChanged");
+	msg = dbus_message_new_signal(ICD_TOR_DBUS_PATH, ICD_TOR_DBUS_INTERFACE, "StatusChanged");
 	if (msg == NULL) {
-		ILOG_WARN
-		    ("Could not construct dbus message for StatusChanged signal");
+		ILOG_WARN("Could not construct dbus message for StatusChanged signal");
 		return;
 	}
 
@@ -115,8 +107,7 @@ void emit_status_signal(network_tor_state state)
 		}
 	}
 
-	dbus_message_append_args(msg,
-				 DBUS_TYPE_STRING, &status, DBUS_TYPE_INVALID);
+	dbus_message_append_args(msg, DBUS_TYPE_STRING, &status, DBUS_TYPE_INVALID);
 
 	icd_dbus_send_system_msg(msg);
 
