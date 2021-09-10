@@ -27,9 +27,6 @@ void tor_state_change(network_tor_private * private,
 	network_tor_state current_state = private->state;
 
 	if (source == EVENT_SOURCE_IP_UP) {
-		/* TODO: We should check if the network is a Tor service_provider user,
-		 * and then *not* start Tor, and just treat it as system-wide disabled. */
-
 		if (current_state.iap_connected) {
 			TN_ERR("ip_up called when we are already connected\n");
 			/* Figure out how to handle this */
@@ -114,10 +111,13 @@ void tor_state_change(network_tor_private * private,
 
 					if (start_ret == 1) {
 						TN_ERR("Could not start Tor triggered through gconf change");
-						/* TODO: take down the interface here? */
+						private->close_cb(ICD_NW_ERROR,
+								  "Could not launch Tor on gconf request",
+								  network_data->network_type,
+								  network_data->network_attrs,
+								  network_data->network_id);
 					} else if (start_ret == 2) {
-						/* TODO: Do we kill tor pids here? */
-
+						network_stop_all(network_data);
 					} else if (start_ret == 0) {
 						new_state.tor_running = TRUE;
 						new_state.tor_bootstrapped_running = TRUE;
@@ -231,7 +231,6 @@ void tor_state_change(network_tor_private * private,
 	}
 
  done:
-	/* TODO: always call emit_status_signal(new_state); here? */
 	/* Free old active_config if it is not the same pointer as in new_state */
 	if (current_state.active_config != NULL && current_state.active_config != new_state.active_config) {
 		free(current_state.active_config);
@@ -354,7 +353,6 @@ static void tor_network_destruct(gpointer * private)
  */
 static void tor_child_exit(const pid_t pid, const gint exit_status, gpointer * private)
 {
-	/* TODO: add state logic here */
 	GSList *l;
 	network_tor_private *priv = *private;
 	tor_network_data *network_data;
