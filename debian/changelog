@@ -1,11 +1,5 @@
-libicd-provider-tor (0.1.1) unstable; urgency=medium
+libicd-tor (0.2) unstable; urgency=medium
 
-  * bugfix for when service_id is empty
+  * Initial release of libicd-network-tor and libicd-network-provider
 
- -- Merlijn Wajer <merlijn@wizzup.org>  Mon, 30 Aug 2021 13:53:11 +0200
-
-libicd-provider-tor (0.1) unstable; urgency=medium
-
-  * Initial release
-
- -- Merlijn Wajer <merlijn@wizzup.org>  Thu, 19 Aug 2021 16:50:01 +0200
+ -- Merlijn Wajer <merlijn@wizzup.org>  Fri, 10 Sep 2021 19:10:28 +0200
