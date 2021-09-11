@@ -7,7 +7,7 @@ Build-Depends:
  libgconf2-dev,
  icd2-dev,
  icd2-osso-ic-dev,
- maemo-system-services-dev (>= 0.6.1),
+ maemo-system-services-dev (>= 0.6.2),
 Section: net
 Standards-Version: 4.3.0
 

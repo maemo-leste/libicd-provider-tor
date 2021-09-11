@@ -13,7 +13,9 @@ CFLAGS += -g -O2
 
 override_dh_auto_install:
 	dh_auto_install --destdir=debian/tmp
-	dh_maemo_installicdnetwork libicd-network-tor libicd_network_tor.so
+	dh_maemo_installicdnetwork libicd-network-tor libicd_network_tor.so \
+		WLAN_INFRA \
+		DUMMY
 
 override_dh_auto_configure:
 	dh_auto_configure -- $(DEB_CONFIGURE_EXTRA_FLAGS)
