@@ -18,6 +18,7 @@ Multi-Arch: same
 Depends:
  ${shlibs:Depends},
  icd2,
+ libicd-network-tor,
  tor,
  python3-stem,
 Description: ICd2 tor service provider configuration module

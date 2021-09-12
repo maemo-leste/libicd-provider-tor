@@ -78,13 +78,13 @@ pid_t spawn_as(const char *username, const char *pathname, char *args[])
 {
 	struct passwd *ent = getpwnam(username);
 	if (ent == NULL) {
-		TN_CRIT("spawn_tor: getpwnam failed\n");
+		TN_CRIT("spawn_as: getpwnam failed\n");
 		return 0;
 	}
 
 	pid_t pid = fork();
 	if (pid < 0) {
-		TN_CRIT("spawn_tor: fork() failed\n");
+		TN_CRIT("spawn_as: fork() failed\n");
 		return 0;
 	} else if (pid == 0) {
 		if (setgid(ent->pw_gid)) {

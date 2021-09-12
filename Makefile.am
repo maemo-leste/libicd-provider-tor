@@ -8,6 +8,7 @@ EXTRA_DIST = \
 	debian/control \
 	debian/copyright \
 	debian/libicd-provider-tor.install \
+	debian/libicd-network-tor.install \
 	debian/rules
 
 MAINTAINERCLEANFILES = \

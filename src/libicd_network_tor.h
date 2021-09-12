@@ -92,9 +92,6 @@ struct _tor_network_data {
 	/* Tor pid */
 	pid_t tor_pid;
 
-	/* Tor command auth pw/token */
-	char *tor_stem_auth;
-
 	/* "Wait for Tor" stem script */
 	pid_t wait_for_tor_pid;
 
