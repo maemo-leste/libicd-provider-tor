@@ -1,0 +1,179 @@
+#!/bin/sh
+GCONF_PATH="/system/osso/connectivity/providers/tor"
+
+usage() {
+	echo "usage: $(basename "$0") enable|disable [config_name] [net_iface]"
+	exit 1
+}
+
+# $1 = enable|disable
+# $2 = config_name
+# $3 = network interface
+if [ -z "$1" ] || [ -z "$2" ] || [ -z "$3" ]; then
+	usage
+fi
+
+die() {
+	# TODO: Maybe try to restore old iptables here if something didn't succeed?
+	echo "$*" >&2
+	exit 1
+}
+
+gconf_dir_exists() {
+	su -- user -c "gconftool --dir-exists $1"
+}
+
+gconf_get() {
+	value="$(su -- user -c "gconftool -g $1")"
+	# gconftool returns 0 if it fails to get something, so we check here
+	if [ -z "$value" ]; then
+		return 1
+	fi
+
+	printf "%s" "$value"
+}
+
+enable_transproxy() {
+	config_name="$1"
+	config_path="$GCONF_PATH/$config_name"
+	net_iface="$2"
+	# Tor's VirtualAddrNetworkIPv4
+	virt_addr="10.192.0.0/10"
+	# LAN destinations that shouldn't be routed through Tor
+	non_tor="127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16"
+	# Other IANA reserved blocks (These are not processed by tor and dropped by default)
+	resv_iana="0.0.0.0/8 100.64.0.0/10 169.254.0.0/16 192.0.0.0/24 192.0.2.0/24 192.88.99.0/24 198.18.0.0/15 198.51.100.0/24 203.0.113.0/24 224.0.0.0/4 240.0.0.0/4 255.255.255.255/32"
+
+	gconf_dir_exists "$config_path" \
+		|| die "Config $config_path doesn't exist"
+
+	tor_uid="$(id -u debian-tor)" \
+		|| die "No user debian-tor"
+
+	trans_port="$(gconf_get "$config_path/trans-port")" \
+		|| die "Failed to get $config_path/trans-port"
+
+	dns_port="$(gconf_get "$config_path/dns-port")" \
+		|| die "Failed to get $config_path/dns-port"
+
+	#### Save existing iptables
+	iptables-save > /etc/iptables-before-tor
+	iptables-save -t nat > /etc/iptables-before-tor-nat
+
+	#### Flush iptables
+	iptables -F || die "Unable to flush iptables"
+	iptables -t nat -F || die "Unable to flush NAT iptables"
+
+	### *nat OUTPUT (For local redirection)
+	# nat .onion addresses
+	iptables -t nat -A OUTPUT \
+		-d "$virt_addr" -p tcp -m tcp \
+		--tcp-flags FIN,SYN,RST,ACK SYN \
+		-j REDIRECT --to-ports "$trans_port" \
+		|| die "Unable to set up iptables NAT output"
+
+	# nat dns requests to Tor
+	iptables -t nat -A OUTPUT \
+		-d 127.0.0.1/32 -p udp -m udp \
+		--dport 53 -j REDIRECT --to-ports "$dns_port" \
+		|| die "Unable to set up NAT DNS requests"
+
+	# Don't nat the Tor process, the loopback, or the local network
+	iptables -t nat -A OUTPUT -m owner --uid-owner "$tor_uid" -j RETURN \
+		|| die "Unable to set up non-nat for Tor process, lo, and lan"
+	iptables -t nat -A OUTPUT -o lo -j RETURN \
+		|| die "Unable to set up non-nat for Tor process, lo, and lan"
+
+	# Allow lan access for hosts in $non_tor
+	for _lan in $non_tor; do
+		iptables -t nat -A OUTPUT -d "$_lan" -j RETURN \
+			|| die "Unable to set up lan access for non-tor hosts"
+	done
+
+	for _iana in $resv_iana; do
+		iptables -t nat -A OUTPUT -d "$_iana" -j RETURN \
+			|| die "Unable to set up iana hosts"
+	done
+
+
+	# Redirect all other pre-routing and output to Tor's TransPort
+	iptables -t nat -A OUTPUT -p tcp -m tcp \
+		--tcp-flags FIN,SYN,RST,ACK SYN \
+		-j REDIRECT --to-ports "$trans_port" \
+		|| die "Unable to output other routing to Tor's TransPort"
+
+	### *filter INPUT
+	# Don't forget to grant yourself ssh access from remote machines before the DROP.
+	#iptables -A INPUT -i $_out_if -p tcp --dport 22 -m state --state NEW -j ACCEPT
+
+	iptables -A INPUT -m state --state ESTABLISHED -j ACCEPT \
+		|| die "Unable to set up ACCEPT for ESTABLISHED"
+
+	iptables -A INPUT -i lo -j ACCEPT \
+		|| die "Unable to set up ACCEPT for loopback"
+
+	# Log & Drop everything else. Uncomment to enable logging
+	#iptables -A INPUT -j LOG --log-prefix "Dropped INPUT packet: " --log-level 7 --log-uid
+	iptables -A INPUT -j DROP \
+		|| die "Unable to set up DROP for everything else"
+
+	iptables -A FORWARD -j DROP \
+		|| die "Unable to set up DROP for FORWARD"
+
+	iptables -A OUTPUT -m state --state INVALID -j DROP \
+		|| die "Unable to set up DROP for INVALID"
+
+	iptables -A OUTPUT -m state --state ESTABLISHED -j ACCEPT \
+		|| die "Unable to set up ACCEPT for ESTABLISHED OUTPUT"
+
+	# Allow Tor process output
+	iptables -A OUTPUT -o "$net_iface" -m owner \
+		--uid-owner "$tor_uid" -p tcp -m tcp \
+		--tcp-flags FIN,SYN,RST,ACK SYN -m state --state NEW -j ACCEPT \
+		|| die "Unable to set up ACCEPT for Tor process output"
+
+	# Allow loopback output
+	iptables -A OUTPUT -d 127.0.0.1/32 -o lo -j ACCEPT \
+		|| die "Unable to set up ACCEPT for loopback OUTPUT"
+
+	# Tor transproxy magic
+	iptables -A OUTPUT -d 127.0.0.1/32 -p tcp -m tcp \
+		--dport "$trans_port" --tcp-flags FIN,SYN,RST,ACK SYN -j ACCEPT \
+		|| die "Unable to set up Tor TransProxy magic"
+
+
+	# Log & Drop everything else. Uncomment to enable logging
+	#iptables -A OUTPUT -j LOG --log-prefix "Dropped OUTPUT packet: " --log-level 7 --log-uid
+	iptables -A OUTPUT -j DROP \
+		|| die "Unable to set up DROP for OUTPUT"
+
+	iptables -P INPUT DROP || die "Unable to set up ip4 INPUT DROP"
+	iptables -P FORWARD DROP || die "Unable to set up ip4 FORWARD DROP"
+	iptables -P OUTPUT DROP || die "Unable to set up ip4 OUTPUT DROP"
+
+	### Set default policies to DROP for IPv6
+	ip6tables -P INPUT DROP || die "Unable to set up ip6 INPUT DROP"
+	ip6tables -P FORWARD DROP || die "Unable to set up ip6 FORWARD DROP"
+	ip6tables -P OUTPUT DROP || die "Unable to set up ip6 OUTPUT DROP"
+
+	return 0
+}
+
+disable_transproxy() {
+	iptables -F || die "Unable to flush iptables"
+	iptables -t nat -F || die "Unable to flush NAT iptables"
+
+	iptables-restore < /etc/iptables-before-tor
+	iptables-restore -t nat < /etc/iptables-before-tor-nat
+}
+
+case "$1" in
+enable)
+	enable_transproxy "$2" "$3" || exit 1
+	;;
+disable)
+	disable_transproxy "$2" "$3" || exit 1
+	;;
+esac
+
+usage
