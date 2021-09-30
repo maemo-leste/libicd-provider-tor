@@ -9,7 +9,7 @@ usage() {
 # $1 = enable|disable
 # $2 = config_name
 # $3 = network interface
-if [ -z "$1" ] || [ -z "$2" ] || [ -z "$3" ]; then
+if [ -z "$1" ] || [ -z "$2" ]; then # || [ -z "$3" ]; then
 	usage
 fi
 
@@ -36,7 +36,7 @@ gconf_get() {
 enable_transproxy() {
 	config_name="$1"
 	config_path="$GCONF_PATH/$config_name"
-	net_iface="$2"
+	#net_iface="$2"
 	# Tor's VirtualAddrNetworkIPv4
 	virt_addr="10.192.0.0/10"
 
@@ -54,7 +54,7 @@ enable_transproxy() {
 
 	cat <<EOF | nft -f /dev/stdin
 # Verify your network interface with ip addr
-define interface = ${net_iface}
+#define interface = ${net_iface}
 # Verify tor uid with id -u tor
 define uid = ${tor_uid}
 
@@ -93,7 +93,8 @@ table ip filter {
     chain INPUT {
         type filter hook input priority 0; policy drop;
         # Allow Local SSH connections
-        iifname \$interface meta l4proto tcp tcp dport 22 ct state new accept
+        #iifname \$interface meta l4proto tcp tcp dport 22 ct state new accept
+        meta l4proto tcp tcp dport 22 ct state new accept
         ct state established accept
         iifname "lo" accept
         ip saddr @private accept
@@ -106,7 +107,8 @@ table ip filter {
     chain OUTPUT {
         type filter hook output priority 0; policy drop;
         ct state established accept
-        oifname \$interface meta l4proto tcp skuid \$uid ct state new accept
+        #oifname \$interface meta l4proto tcp skuid \$uid ct state new accept
+        meta l4proto tcp skuid \$uid ct state new accept
         oifname "lo" accept
         ip daddr @private accept
     }
@@ -120,11 +122,13 @@ disable_transproxy() {
 
 case "$1" in
 enable)
-	enable_transproxy "$2" "$3" || exit 1
+	#enable_transproxy "$2" "$3" || exit 1
+	enable_transproxy "$2" || exit 1
 	exit 0
 	;;
 disable)
-	disable_transproxy "$2" "$3" || exit 1
+	#disable_transproxy "$2" "$3" || exit 1
+	disable_transproxy "$2" || exit 1
 	exit 0
 	;;
 esac
