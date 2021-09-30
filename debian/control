@@ -19,9 +19,6 @@ Depends:
  ${shlibs:Depends},
  icd2,
  libicd-network-tor,
- tor,
- python3-stem,
- nftables,
 Description: ICd2 tor service provider configuration module
  ICd2 tor service provider configuration module
 
@@ -35,7 +32,6 @@ Depends:
  tor,
  python3-stem,
  nftables,
-Description: ICd2 tor service provider configuration module
 Description: ICd2 tor network configuration module
  ICd2 tor network configuration module
 
