@@ -182,6 +182,7 @@ void tor_state_change(network_tor_private * private,
 			if (current_state.service_provider_mode) {
 				/* Nothing more to do, service provider will pick it up */
 			} else if (current_state.gconf_transition_ongoing) {
+				network_stop_all(network_data);
 				new_state.gconf_transition_ongoing = FALSE;
 			} else {
 				/* This will call tor_disconnect, so we don't free/stop here, since

@@ -124,6 +124,9 @@ void network_free_all(tor_network_data * network_data)
 
 void network_stop_all(tor_network_data * network_data)
 {
+	if (network_data->transproxy_enabled) {
+		transproxy_onoff(FALSE, NULL);
+	}
 	if (network_data->tor_pid != 0) {
 		kill(network_data->tor_pid, SIGTERM);
 	}
@@ -132,9 +135,48 @@ void network_stop_all(tor_network_data * network_data)
 	}
 }
 
+int transproxy_onoff(gboolean on, char *config)
+{
+	GError *error = NULL;
+	int exit_code = 0;
+	int ret = 0;
+
+	const char *action = NULL;
+	char *cmdline = NULL;
+
+	if (on) {
+		action = "enable";
+		cmdline = g_strdup_printf("/usr/bin/libicd-tor-transproxy %s %s", action, config);
+	} else {
+		action = "disable";
+		cmdline = g_strdup_printf("/usr/bin/libicd-tor-transproxy %s %s", action, "config_is_irrelevant");
+	}
+
+	g_spawn_command_line_sync(cmdline, NULL, NULL, &exit_code, &error);
+
+	if (error) {
+		ret = 1;
+		TN_WARN("Failed to %s transproxy rules: %s", action, error->message);
+		g_clear_error(&error);
+		goto done;
+	}
+
+	if (exit_code != 0) {
+		ret = 1;
+		TN_WARN("%s transproxy rules failed to apply with exit code: %d", action, exit_code);
+		goto done;
+	}
+
+	ret = 0;
+
+ done:
+	if (cmdline)
+		g_free(cmdline);
+	return ret;
+}
+
 int startup_tor(tor_network_data * network_data, char *config)
 {
-
 	char config_filename[256];
 	if (snprintf(config_filename, 256, "/etc/tor/torrc-network-%s", config)
 	    >= 256) {
@@ -161,6 +203,12 @@ int startup_tor(tor_network_data * network_data, char *config)
 	TN_INFO("Got tor_pid: %d\n", pid);
 	network_data->tor_pid = pid;
 	network_data->private->watch_cb(pid, network_data->private->watch_cb_token);
+
+	network_data->transproxy_enabled = config_has_transproxy(config);
+
+	if (network_data->transproxy_enabled) {
+		transproxy_onoff(TRUE, config);
+	}
 
 	gchar *gc_controlport = g_strjoin("/", GC_TOR, config, GC_CONTROLPORT, NULL);
 	GConfClient *gconf = gconf_client_get_default();

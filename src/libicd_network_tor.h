@@ -95,6 +95,9 @@ struct _tor_network_data {
 	/* "Wait for Tor" stem script */
 	pid_t wait_for_tor_pid;
 
+	/* Is transproxy enabled? */
+	gboolean transproxy_enabled;
+
 	/* For matching / callbacks later on (like close and limited_conn callback) */
 	gchar *network_type;
 	guint network_attrs;
@@ -118,6 +121,7 @@ tor_network_data *icd_tor_find_network_data(const gchar * network_type,
 					    guint network_attrs,
 					    const gchar * network_id, network_tor_private * private);
 gboolean string_equal(const char *a, const char *b);
+int transproxy_onoff(gboolean on, char *config);
 int startup_tor(tor_network_data * network_data, char *config);
 
 enum icd_tor_event_source_type {
