@@ -21,6 +21,7 @@ Depends:
  libicd-network-tor,
  tor,
  python3-stem,
+ nftables,
 Description: ICd2 tor service provider configuration module
  ICd2 tor service provider configuration module
 
@@ -33,6 +34,8 @@ Depends:
  icd2,
  tor,
  python3-stem,
+ nftables,
+Description: ICd2 tor service provider configuration module
 Description: ICd2 tor network configuration module
  ICd2 tor network configuration module
 
