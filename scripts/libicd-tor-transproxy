@@ -2,7 +2,7 @@
 GCONF_PATH="/system/osso/connectivity/providers/tor"
 
 usage() {
-	echo "usage: $(basename "$0") enable|disable [config_name] [net_iface]"
+	echo "usage: $(basename "$0") enable|disable [config_name]"
 	exit 1
 }
 
