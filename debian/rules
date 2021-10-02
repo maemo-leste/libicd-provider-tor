@@ -1,6 +1,8 @@
 #!/usr/bin/make -f
 export DH_VERBOSE=1
 
+MAEMO_SUPPORTED_NETWORKS = WLAN_INFRA GPRS DUMMY
+
 # showel logs to stderr if we're debugging
 ifneq (,$(findstring debug,$(DEB_BUILD_OPTIONS)))
 	confflags += --enable-log-stderr
@@ -14,8 +16,7 @@ CFLAGS += -g -O2
 override_dh_auto_install:
 	dh_auto_install --destdir=debian/tmp
 	dh_maemo_installicdnetwork libicd-network-tor libicd_network_tor.so \
-		WLAN_INFRA \
-		DUMMY
+		$(MAEMO_SUPPORTED_NETWORKS)
 
 override_dh_auto_configure:
 	dh_auto_configure -- $(DEB_CONFIGURE_EXTRA_FLAGS)
