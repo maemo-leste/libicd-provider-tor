@@ -32,6 +32,7 @@ Depends:
  tor,
  python3-stem,
  nftables,
+ maemo-system-services-dev,
 Description: ICd2 tor network configuration module
  ICd2 tor network configuration module
 
